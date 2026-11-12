@@ -1,5 +1,5 @@
 // Third-Octave Manager · service worker: online it always uses the latest version; offline, the saved one.
-const CACHE = 'third-octave-1';
+const CACHE = 'third-octave-1.0';   // change with each version
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable.png'];
 const LIB = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';   // Excel reader: versioned, so cache-first
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES).then(() => c.add(new Request(LIB, { mode: 'no-cors' })).catch(() => {})))); self.skipWaiting(); });

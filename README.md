@@ -31,3 +31,11 @@ Herramienta en un único archivo HTML para gestionar y visualizar medidas de rui
 3. Guarda el proyecto con **Save** para conservar el árbol y los espectros. Las señales temporales UNV no se guardan en el proyecto, solo sus espectros.
 
 Necesita conexión a internet la primera vez para cargar la librería de lectura de Excel (SheetJS).
+
+## Versiones
+
+La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se guarda también dentro de cada proyecto `.json`.
+
+| Versión | Fecha | Cambios |
+|---|---|---|
+| 1.0 | 12/11/2026 | Primera versión publicada en GitHub: importación 2250, UNV, FFT y aislamiento; ponderación Wm; imágenes de informe por carpeta; icono e instalación como aplicación. |
