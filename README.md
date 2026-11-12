@@ -22,6 +22,10 @@ Herramienta en un único archivo HTML para gestionar y visualizar medidas de rui
 
 ## Uso
 
+**En línea:** https://oscarvib.github.io/third-octave-manager/ (siempre la última versión). En Chrome o Edge se puede instalar como aplicación con su propio icono: botón de instalar en la barra de direcciones, o menú ⋮ → *Enviar, guardar y compartir* → *Instalar página como aplicación*. Una vez instalada, también abre sin conexión.
+
+**Archivo local:**
+
 1. Abre `third-octave-manager.html` en el navegador.
 2. Importa los archivos con **Import Excel / UNV** o arrastrándolos sobre una carpeta del árbol.
 3. Guarda el proyecto con **Save** para conservar el árbol y los espectros. Las señales temporales UNV no se guardan en el proyecto, solo sus espectros.
