@@ -242,7 +242,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.0 · 12 Nov 2026">v1.0</span></h1><small>Sound level meter Excel · UNV time signals · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.1 · 12 Nov 2026">v1.1</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -291,7 +291,7 @@ function parseUnv(buf, fileName){
   const isEnd = s => s !== null && s.trim() === "-1";
   const numRe = /[-+]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][-+]?\d+)?/g;
   const nums = s => (s.match(numRe) || []).map(x => parseFloat(x.replace(/[Dd]/, "E")));
-  const chans = []; let skipped = 0;
+  const chans = [], specs = []; let skipped = 0;
   while (pos < len){
     const l = line(); if (l === null) break;
     if (!isEnd(l)) continue;
@@ -330,25 +330,34 @@ function parseUnv(buf, fileName){
         if (even){ for (let i = 0; i < nPts; i++) data[i] = get(i*step); }
         else {   // uneven: abscissa (single) + ordinate pairs
           const ps = 4 + step; const xa = dv.getFloat32(0, le), xb = nPts > 1 ? dv.getFloat32(ps, le) : xa + 1;
-          ch.x0 = xa; ch.dx = xb - xa; for (let i = 0; i < nPts; i++) data[i] = get(i*ps + 4);
+          ch.x0 = xa; ch.dx = xb - xa; ch.xs = new Float32Array(nPts); for (let i = 0; i < nPts; i++){ data[i] = get(i*ps + 4); ch.xs[i] = dv.getFloat32(i*ps, le); }
         }
+      } else {   // complex spectra (FRF, cross spectrum…): keep the magnitude
+        data = new Float32Array(nPts); const ps = (even ? 0 : 4) + 2*step; if (!even) ch.xs = new Float32Array(nPts);
+        for (let i = 0; i < nPts; i++){ const o = i*ps + (even ? 0 : 4); data[i] = Math.hypot(get(o), get(o + step)); if (!even) ch.xs[i] = dv.getFloat32(i*ps, le); }
+        if (!even){ ch.x0 = ch.xs[0]; ch.dx = nPts > 1 ? ch.xs[1] - ch.xs[0] : 1; }
       }
       pos += nBytes;
       while (pos < len){ const s = line(); if (s === null || isEnd(s)) break; }
     } else {
       const vals = []; let s;
       while ((s = line()) !== null && !isEnd(s)){ const a = s.match(numRe); if (a) for (const x of a) vals.push(parseFloat(x.replace(/[Dd]/, "E"))); }
+      data = new Float32Array(nPts);
       if (!complex){
-        data = new Float32Array(nPts);
         if (even){ for (let i = 0; i < nPts && i < vals.length; i++) data[i] = vals[i]; }
-        else { ch.x0 = vals[0]; ch.dx = (vals[2] ?? vals[0] + 1) - vals[0]; for (let i = 0; i < nPts; i++) data[i] = vals[2*i + 1]; }
+        else { ch.x0 = vals[0]; ch.dx = (vals[2] ?? vals[0] + 1) - vals[0]; ch.xs = new Float32Array(nPts); for (let i = 0; i < nPts; i++){ data[i] = vals[2*i + 1]; ch.xs[i] = vals[2*i]; } }
+      } else {   // complex: magnitude
+        if (even){ for (let i = 0; i < nPts; i++) data[i] = Math.hypot(vals[2*i] || 0, vals[2*i + 1] || 0); }
+        else { ch.xs = new Float32Array(nPts); for (let i = 0; i < nPts; i++){ ch.xs[i] = vals[3*i]; data[i] = Math.hypot(vals[3*i + 1] || 0, vals[3*i + 2] || 0); } ch.x0 = ch.xs[0]; ch.dx = nPts > 1 ? ch.xs[1] - ch.xs[0] : 1; }
       }
     }
+    // spectra (abscissa = frequency): kept apart, imported as narrowband lines
+    if (data && ch.absType === 18 && ch.ftype !== 1){ ch.data = data; ch.idx = specs.length; specs.push(ch); continue; }
     if (!data || !(ch.dx > 0) || (ch.absType && ch.absType !== 17 && ch.absType !== 0)){ skipped++; continue; }   // only time histories
     { const f = 1/ch.dx, r = Math.round(f); ch.fs = Math.abs(f - r)/f < 2e-4 ? r : f; }
     ch.data = data; ch.idx = chans.length; chans.push(ch);
   }
-  return { chans, skipped };
+  return { chans, specs, skipped };
 }
 
 /* ---------- mixed-radix FFT (factors 4,2,3,5,...) ---------- */
@@ -458,7 +467,8 @@ self.onmessage = e => {
   const m = e.data;
   try {
     if (m.op === "parse"){
-      const { chans, skipped } = parseUnv(m.buf, m.name);
+      const { chans, specs, skipped } = parseUnv(m.buf, m.name);
+      const sp = specs.map(c => ({ ...c, q: quantity(c.units, c.ordCode).q, qf: quantity(c.units, c.ordCode).f }));
       const out = chans.map(c => {
         const key = m.name + "#" + c.idx;
         SIG.set(key, { fs: c.fs, data: c.data, units: c.units, code: c.ordCode });
@@ -466,7 +476,7 @@ self.onmessage = e => {
         const { data, ...meta } = c;
         return { ...meta, key, dur: c.data.length/c.fs, q: quantity(c.units, c.ordCode).q, env };
       });
-      self.postMessage({ op: "parsed", id: m.id, name: m.name, chans: out, skipped });
+      self.postMessage({ op: "parsed", id: m.id, name: m.name, chans: out, specs: sp, skipped });
     } else if (m.op === "process"){
       const tot = m.jobs.length; let done = 0;
       for (const j of m.jobs){
@@ -495,7 +505,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "1.0";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "1.1";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -1116,7 +1126,7 @@ function buildView(){
   const refs = [...new Set(ms.filter(n => n.d.m[UI.metric]).map(n => (qConv(n.d, UI.metric) || {}).ref || n.d.ref || "dB"))];
   const qmap = {}; for (const n of ms) for (const m of Object.keys(n.d.m)){ const qc = qConv(n.d, m); if (qc) qmap[m] = qc.lab; }
   const lus = [...new Set(series.map(s => s.lu).filter(Boolean))];
-  const V = { ...ctx, qmap, linUnit: lus.length === 1 ? lus[0] : null, anyVib: ms.some(n => Object.keys(n.d.m).some(m => qOf(n.d, m))), yLab: refs.length === 1 ? refs[0] : "dB", anyNb: series.some(s => s.nb), title, crumb, ms, metrics, freqs, series, hasW, totKeys, drawKeys, metric: UI.metric, sameName: U.sameName, bk, bandAxis: `${bk} octave band [Hz]` };
+  const V = { ...ctx, qmap, linUnit: lus.length === 1 ? lus[0] : null, anyVib: ms.some(n => Object.keys(n.d.m).some(m => { const q = qOf(n.d, m); return q === "accel" || q === "vel"; })), yLab: refs.length === 1 ? refs[0] : "dB", anyNb: series.some(s => s.nb), title, crumb, ms, metrics, freqs, series, hasW, totKeys, drawKeys, metric: UI.metric, sameName: U.sameName, bk, bandAxis: `${bk} octave band [Hz]` };
   V.mean = meanSeries(V); return V;
 }
 const viewMode = () => (VIEW && VIEW.anyNb) ? (UI.mode || "both") : "bands";
@@ -1781,7 +1791,7 @@ function refLabel(q, ref, units){
   return `dB re 1 ${units || "unit"}`;
 }
 function unvDate(c, lastModified){
-  const MON = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+  const MON = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12, ene:1, abr:4, ago:8, dic:12 };
   for (const s of [c.id3, c.id4, c.id2, c.id5]){
     let m = String(s || "").match(/(\d{1,2})-([A-Za-z]{3})-(\d{2,4})\s+(\d{1,2}):(\d{2}):(\d{2})/);
     if (m && MON[m[2].toLowerCase()]){ const y = m[3].length === 2 ? 2000 + +m[3] : +m[3]; return `${y}-${p2(MON[m[2].toLowerCase()])}-${p2(+m[1])} ${p2(+m[4])}:${m[5]}:${m[6]}`; }
@@ -1792,10 +1802,12 @@ function unvDate(c, lastModified){
   return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
 }
 /* channel name = ordinate label of record 9 (e.g. "CH1_PS_GBOX_H"); fallbacks only if it is empty */
+const GENERIC_LAB = /^(none|unknown|acceleration|velocity|displacement|pressure|sound pressure|force|voltage|response|amplitude|magnitude|spectrum|real|imaginary)$/i;
 function chName(c){
   const ok = v => v && !/^none$/i.test(String(v).trim());
+  if (ok(c.ordLabel) && !GENERIC_LAB.test(c.ordLabel.trim())) return c.ordLabel.trim();
+  if (ok(c.id1)){ const m = c.id1.match(/^\s*CH\.?\s*\d+\s*:\s*([^:]+?)\s*(?::.*)?$/i); return (m ? m[1] : c.id1).trim(); }   // "CH. 1:CH1_NAME   :Pa"
   if (ok(c.ordLabel)) return c.ordLabel.trim();
-  if (ok(c.id1)) return c.id1.trim();
   return `Ch${c.idx + 1}${c.node ? " · " + c.node + (DIRS[c.dir] || "") : ""}`;
 }
 const isTacho = c => /rpm|1\/min|tacho|rev/i.test(c.units + " " + c.ordLabel) || c.ordCode === 19;
@@ -1839,8 +1851,9 @@ async function loadUnv(file){
 }
 async function handleUnv(file, dest){
   const res = await loadUnv(file); if (!res) return;
-  if (!res.chans.length){ toast(`No time histories (dataset 58) found in ${file.name}`); return; }
-  await unvDialog(file, res, dest);
+  if (!res.chans.length && !(res.specs && res.specs.length)){ toast(`No time histories or spectra (dataset 58) found in ${file.name}`); return; }
+  if (res.specs && res.specs.length) await unvSpecDialog(file, res.specs, dest);
+  if (res.chans.length) await unvDialog(file, res, dest);
 }
 function unvDialog(file, res, dest){
   return new Promise(done => {
@@ -2086,6 +2099,97 @@ function fftDialog(P, dest){
         });
         UI.sel = new Set([base]); UI.active = base; UI.hidden.clear(); UI.mode = UI.mode || "both"; renderTree(); renderView();
         toast(`${made.length} FFT spectra imported`, "Undo", undo); done();
+      } }
+    ], true);
+  });
+}
+
+/* ---------- spectra exported as UNV (dataset 58, abscissa = frequency): lines → bands, as with the FFT Excel ---------- */
+const UNV_FTYPE = { 2: "Auto spectrum", 3: "Cross spectrum", 4: "FRF", 9: "PSD", 12: "Spectrum" };
+const SPEC_AMP = { rms: { l: "Linear RMS", pw: 1, k: 1 }, pk: { l: "Linear peak", pw: 1, k: Math.SQRT1_2 }, pow: { l: "Power (units² RMS)", pw: 2, k: 1 }, psd: { l: "PSD (units²/Hz)", pw: 3, k: 1 } };
+/* power of each line in units² (RMS): linear values squared, power as is, PSD × Δf */
+function specPow(v, i, o){ const x = v[i]; if (x == null || !isFinite(x)) return null; if (o.pw === 1){ const a = x*o.k*o.qf; return a*a; } const p = x*o.qf*o.qf; return o.pw === 3 ? p*o.df : p; }
+function specBands(f, v, o){
+  const r2 = o.ref*o.ref, stp = o.bands === "1/1" ? 3 : 1, half = stp/20, fmax = f[f.length - 1] + 1e-9, div = o.pw === 3 ? 1 : o.win;
+  const n = [], lv = [];
+  for (let b = -30; b <= 15; b += stp){
+    const fc = 1000*Math.pow(10, b/10), lo = fc*Math.pow(10, -half), hi = fc*Math.pow(10, half);
+    if (lo < o.cut - 1e-9 || hi > fmax || hi - lo < o.df) continue;   // a band narrower than Δf can't be resolved by the lines
+    let p = 0, any = false; for (let i = 0; i < f.length; i++){ if (f[i] >= lo && f[i] < hi){ const x = specPow(v, i, o); if (x != null){ p += x; any = true; } } }
+    n.push(b); lv.push(any && p > 0 ? Math.round(10*Math.log10(p/div/r2)*100)/100 : null);
+  }
+  return { n, lv };
+}
+const isHydro = c => /hydro|hidr[oó]f/i.test(chName(c) + " " + c.id1);
+function unvSpecDialog(file, specs, dest){
+  return new Promise(done => {
+    const sp = specs; const c0 = sp[0];
+    const ft = UNV_FTYPE[c0.ftype] || `function type ${c0.ftype}`;
+    const defAmp = c0.ftype === 9 ? "psd" : c0.ftype === 2 ? "pow" : "rms";
+    const last = { amp: defAmp, cut: 1, win: "hann", bands: "1/3", ...(UI.lastSpec || {}) }; if (!UI.lastSpec) last.amp = defAmp;
+    const QN = { sound: "Sound", accel: "Acceleration", vel: "Velocity", other: "Other" };
+    const fmax = c => c.xs ? c.xs[c.xs.length - 1] : c.x0 + (c.n - 1)*c.dx;
+    const b = document.createElement("div"); b.style.display = "contents";
+    b.innerHTML = `<div><b>${esc(file.name)}</b> · ${sp.length} spectr${sp.length > 1 ? "a" : "um"} (${esc(ft)}) · ${c0.n} lines up to ${+fmax(c0).toFixed(1)} Hz · Δf ${+c0.dx.toFixed(4)} Hz</div>
+      <div class="tblwrap" style="max-height:200px;overflow:auto"><table class="list" id="sTbl"><thead><tr><th></th><th>Channel</th><th>Units</th><th>Quantity</th><th>Reference</th><th class="n">Overall</th></tr></thead><tbody></tbody></table></div>
+      <div class="sec-h"><h4>Format of the values in the file</h4><span class="hint">The UNV says “${esc(ft)}” but not whether values are RMS or peak, nor the window. Usual export: linear RMS, Hanning.</span></div>
+      <div class="proc flat"><div class="grid">
+        <label for="sAmp">Amplitude <select id="sAmp">${Object.entries(SPEC_AMP).map(([k, a]) => `<option value="${k}" ${k === last.amp ? "selected" : ""}>${a.l}</option>`).join("")}</select></label>
+        <label for="sWin">Window used by the analyser <select id="sWin">${Object.entries(FFT_WIN).map(([k, w]) => `<option value="${k}" ${k === last.win ? "selected" : ""}>${w.l}</option>`).join("")}</select></label>
+        <label for="sCut">Discard lines below [Hz] <input type="number" id="sCut" min="0" step="0.5" value="${last.cut}"></label>
+        <label for="sBands">Bands computed from the lines <select id="sBands"><option value="1/3" ${last.bands === "1/3" ? "selected" : ""}>1/3 octave</option><option value="1/1" ${last.bands === "1/1" ? "selected" : ""}>1/1 octave</option></select></label>
+      </div><div class="hint">Band level = Σ line power ÷ window noise bandwidth (Hanning 1.5, flat top 3.77). PSD values are multiplied by Δf and need no window correction. Only bands fully inside the spectrum and at least Δf wide are kept.</div></div>
+      <div>Destination:</div>`;
+    const tb = b.querySelector("#sTbl tbody");
+    const refOpts = (c, i) => c.q === "sound" ? `<select data-r="${i}" aria-label="Reference"><option value="2e-5" ${isHydro(c) ? "" : "selected"}>20 µPa (air)</option><option value="1e-6" ${isHydro(c) ? "selected" : ""}>1 µPa (water)</option></select>`
+      : c.q === "accel" ? "1 µm/s²" : c.q === "vel" ? "1 nm/s" : `1 ${esc(c.units || "unit")}`;
+    tb.innerHTML = sp.map((c, i) => `<tr><td><input type="checkbox" data-i="${i}" ${c.q === "other" ? "" : "checked"} aria-label="Import spectrum"></td><td>${esc(chName(c))}</td><td>${esc(c.units || "—")}</td><td>${QN[c.q]}</td><td>${refOpts(c, i)}</td><td class="n" data-o="${i}"></td></tr>`).join("");
+    const fp = folderPicker(dest);
+    const opt = document.createElement("label"); opt.className = "ck"; opt.innerHTML = `<input type="checkbox" id="sWrap" checked> Create a folder named after the file`;
+    b.append(fp, opt);
+    const refOf = (c, i) => c.q === "sound" ? parseFloat(tb.querySelector(`[data-r="${i}"]`).value) : c.q === "accel" ? PDEF.refA : c.q === "vel" ? PDEF.refV : 1;
+    const freqs = c => c.xs ? Array.from(c.xs) : Array.from({ length: c.n }, (_, i) => c.x0 + i*c.dx);
+    const opts = (c, i) => { const a = SPEC_AMP[b.querySelector("#sAmp").value]; return { pw: a.pw, k: a.k, qf: c.qf || 1, df: c.dx, win: FFT_WIN[b.querySelector("#sWin").value].k, cut: Math.max(0, parseFloat(b.querySelector("#sCut").value) || 0), bands: b.querySelector("#sBands").value, ref: refOf(c, i) }; };
+    // overall from the lines (≥ cut), so the format choice can be checked against the instrument
+    const prev = () => {
+      b.querySelector("#sWin").disabled = b.querySelector("#sAmp").value === "psd";
+      sp.forEach((c, i) => { const o = opts(c, i), f = freqs(c); let p = 0; for (let j = 0; j < f.length; j++) if (f[j] >= o.cut && f[j] > 0){ const x = specPow(c.data, j, o); if (x) p += x; }
+        const L = p > 0 ? 10*Math.log10(p/(o.pw === 3 ? 1 : o.win)/(o.ref*o.ref)) : null;
+        const un = c.q === "sound" ? "Pa" : c.q === "accel" ? "m/s²" : c.q === "vel" ? "m/s" : c.units;
+        tb.querySelector(`[data-o="${i}"]`).textContent = L == null ? "—" : `${fmt(L, 1)} dB · ${fmtLin(Math.sqrt(p/(o.pw === 3 ? 1 : o.win)))} ${un}`; });
+    };
+    b.addEventListener("input", prev); b.addEventListener("change", prev); prev();
+    modal("Import spectra (UNV)", b, [
+      { label: "Cancel", run: () => done() },
+      { label: "Import", primary: true, run: () => {
+        const sel = [...tb.querySelectorAll("input[data-i]:checked")].map(x => +x.dataset.i);
+        if (!sel.length){ toast("Tick at least one spectrum"); return false; }
+        const amp = b.querySelector("#sAmp").value, win = b.querySelector("#sWin").value;
+        UI.lastSpec = { amp, win, cut: Math.max(0, parseFloat(b.querySelector("#sCut").value) || 0), bands: b.querySelector("#sBands").value };
+        let base; const made = [];
+        commit(() => {
+          base = b.querySelector("#sWrap").checked ? addFolder(file.name.replace(/\.[^.]+$/, ""), fp.value) : fp.value;
+          for (const i of sel){
+            const c = sp[i], o = opts(c, i), f = freqs(c);
+            const { n, lv } = specBands(f, c.data, o);
+            const water = c.q === "sound" && o.ref < 1e-5;
+            const metric = c.q === "sound" ? (water ? "Lp" : "LZeq") : c.q === "accel" ? "La" : c.q === "vel" ? "Lv" : "L";
+            const ref = refLabel(c.q, o.ref, c.units);
+            let nb = null;
+            if (!c.xs && c.dx > 0){   // evenly spaced lines: keep them as the narrowband
+              const len = Math.round(fmax(c)/c.dx) + 1, arr = new Float32Array(len).fill(NaN);
+              for (let j = 0; j < f.length; j++){ const k = Math.round(f[j]/c.dx); if (f[j] >= o.cut && f[j] > 0 && k < len){ const x = specPow(c.data, j, o); if (x > 0) arr[k] = 10*Math.log10(x/(o.ref*o.ref)); } }
+              nb = { ref: storeNb(arr), df: c.dx };
+            }
+            const d = { kind: "fft", start: unvDate(c, file.lastModified), dur: "", src: file.name, f: n.map(nominal), m: { [metric]: lv }, w: { [metric]: metric === "LZeq" ? "Z" : null },
+              ref, ...(nb ? { nb } : {}), ts: { q: c.q, units: c.units }, proc: { refA: PDEF.refA, refV: PDEF.refV, refP: c.q === "sound" ? o.ref : PDEF.refP },
+              meta: { Values: `${c.units || "—"} · ${SPEC_AMP[amp].l}`, Spectrum: `${ft} · ${c.n} lines · Δf ${+c.dx.toFixed(4)} Hz`, "Lines below": `${o.cut} Hz discarded`, ...(amp === "psd" ? {} : { Window: FFT_WIN[win].l + " (bands ÷" + FFT_WIN[win].k + ")" }), Reference: ref } };
+            made.push(addMeas(chName(c), d, base));
+          }
+          N(fp.value).open = true;
+        });
+        UI.sel = new Set([base]); UI.active = base; UI.hidden.clear(); renderTree(); renderView();
+        toast(`${made.length} spectr${made.length === 1 ? "um" : "a"} imported`, "Undo", undo); done();
       } }
     ], true);
   });
