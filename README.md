@@ -31,7 +31,12 @@ Herramienta en un único archivo HTML para gestionar y visualizar medidas de rui
 2. Importa los archivos con **Import Excel / UNV** o arrastrándolos sobre una carpeta del árbol.
 3. Guarda el proyecto con **Save** para conservar el árbol y los espectros. Las señales temporales UNV no se guardan en el proyecto, solo sus espectros.
 
-Necesita conexión a internet la primera vez para cargar la librería de lectura de Excel (SheetJS).
+El archivo suelto necesita internet para cargar la librería de lectura de Excel (SheetJS) y las fuentes. La versión en línea / instalada las lleva incluidas (`lib/`, `fonts/`) y funciona sin conexión.
+
+## Licencias de terceros
+
+- SheetJS Community Edition 0.18.5 — Apache 2.0 (`lib/SheetJS-LICENSE.txt`).
+- IBM Plex — SIL Open Font License 1.1 (`fonts/OFL.txt`).
 
 ## Versiones
 
@@ -39,5 +44,6 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 1.2 | 15/11/2026 | La versión instalada funciona totalmente sin internet: la librería de Excel (SheetJS) y las fuentes van incluidas en el repositorio y se guardan al instalar. |
 | 1.1 | 12/11/2026 | Importación de espectros UNV (sonómetro, hidrófono, acelerómetros) con cálculo de bandas; referencia 1 µPa para hidrófonos. |
 | 1.0 | 12/11/2026 | Primera versión publicada en GitHub: importación 2250, UNV, FFT y aislamiento; ponderación Wm; imágenes de informe por carpeta; icono e instalación como aplicación. |
