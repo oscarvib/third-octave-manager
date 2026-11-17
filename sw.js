@@ -1,7 +1,7 @@
 // Third-Octave Manager · service worker.
 // Everything the app needs (page, Excel library, fonts, icons) is in this repository and is cached at install:
 // online it always takes the latest version; offline it opens the saved one.
-const CACHE = 'third-octave-1.9';   // change with each version
+const CACHE = 'third-octave-2.0';   // change with each version
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable.png',
   './lib/xlsx.full.min.js', './fonts/fonts.css',
   './fonts/IBMPlexSans-Regular.woff2', './fonts/IBMPlexSans-Medium.woff2', './fonts/IBMPlexSans-SemiBold.woff2',

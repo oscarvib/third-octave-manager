@@ -200,6 +200,9 @@ table.list tfoot td{border-top:2px solid var(--line);cursor:default}
 .timebox{position:relative;height:96px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
 #tsig{position:absolute;inset:0;width:100%;height:100%;cursor:col-resize;touch-action:none}
 .aegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.repgrid{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start}.repctl{display:flex;flex-direction:column;gap:8px}.repctl .opts{display:flex;flex-wrap:wrap;gap:6px 14px}.repctl .sec-h{margin:4px 0 0}
+.repprev img.prev{max-height:70vh;width:100%;object-fit:contain;background:#fff;border:1px solid var(--line)}
+@media (max-width:900px){.repgrid{grid-template-columns:1fr}}
 table.bands td.over{color:#c8322b;font-weight:700;background:rgba(200,50,43,.08)}
 .ddl{position:relative}.ddl>summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:4px 10px;background:var(--panel);font-size:13px}.ddl>summary::-webkit-details-marker{display:none}
 .ddl-p{position:absolute;z-index:20;top:calc(100% + 4px);left:0;min-width:320px;max-height:320px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:8px 10px;display:flex;flex-direction:column;gap:6px}.ddl-p label{display:flex;gap:6px;align-items:baseline;font-size:13px}
@@ -244,7 +247,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 <script>if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.9 · 17 Nov 2026">v1.9</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.0 · 17 Nov 2026">v2.0</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -592,7 +595,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "1.9";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "2.0";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -1763,55 +1766,83 @@ function bindChart(){
 /* ---------- report image ---------- */
 const REPORT_SIZES = { "1600x900": [1600, 900], "1200x700": [1200, 700], "2000x900": [2000, 900] };
 function ellipsize(c, s, w){ if (c.measureText(s).width <= w) return s; while (s.length > 1 && c.measureText(s + "…").width > w) s = s.slice(0, -1); return s + "…"; }
+const REPORT_ASPECT = { "16:9": [16, 9], "3:2": [3, 2], "4:3": [4, 3], "1:1": [1, 1], "3:4": [3, 4] };
+const REPORT_WIDTHS = [1200, 1600, 2000, 2400, 3000];
+function reportWH(cfg){ if (cfg.W && cfg.H) return [cfg.W, cfg.H]; return REPORT_SIZES[cfg.size] || [1600, 900]; }
+/* legend rows of the report, filtered by the dialog options */
+function reportLegendRows(cfg, K){
+  const single = VIEW.kind === "single"; const lg = cfg.lg || {};
+  let rows = single ? cfg.singleRows.map(r => ({ ...r, kind: r.kind || "ser" })) : visSer().map(s => ({ s, color: serColor(K, s), shape: s.shape, name: s.name, val: cfg.cursor ? valAt(s) : s.tot[VIEW.drawKeys[0]], kind: s.bg ? "bg" : "ser" }));
+  if (!single && VIEW.mean) rows.push({ s: VIEW.mean, color: K.ink, shape: "circle", name: VIEW.mean.name, val: cfg.cursor ? valAt(VIEW.mean) : VIEW.mean.tot[VIEW.drawKeys[0]], bold: true, kind: "mean" });
+  if (!single) for (const Lm of VIEW.lims || []) rows.push({ s: VIEW.series[0], color: Lm.color, shape: "square", name: `${Lm.name} (limit)`, val: cfg.cursor && !isTot(UI.cursor) ? limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)) : undefined, kind: "lim" });
+  rows = rows.filter(r => r.kind === "ser" ? lg.curves !== false : r.kind === "bg" ? lg.bg !== false : r.kind === "mean" ? lg.mean !== false : r.kind === "lim" ? lg.lims !== false : true);
+  if (lg.values === false) rows = rows.map(r => ({ ...r, val: undefined })).filter(r => r.name.trim());
+  return rows;
+}
 function renderReport(cfg){
-  const [Wd, Ht] = REPORT_SIZES[cfg.size] || [1600, 900];
-  const sc = Wd / 760;    // layout unit: text stays legible when the image is pasted at page width
+  const [Wd, Ht] = reportWH(cfg);
+  const sc = Math.min(Wd, Ht*1.9)/760;    // layout unit: text stays legible when the image is pasted at page width (square and portrait images too)
   const cv = document.createElement("canvas"); cv.width = Wd; cv.height = Ht;
   const c = cv.getContext("2d"); const K = REPORT_COLORS;
   c.fillStyle = K.bg; c.fillRect(0, 0, Wd, Ht);
-  const pad = 24*sc;
+  const pad = 24*sc; const hd = cfg.hd || {}; const lg = cfg.lg || {};
   const single = VIEW.kind === "single";
-  // header: kicker, title, subtitle on the left; overall result on the right
   const qn = { sound: "Sound pressure level", accel: "Vibration acceleration", vel: "Vibration velocity" };
   const q0 = VIEW.ms[0] ? (qOf(VIEW.ms[0].d, UI.metric) || "sound") : "sound";
   const qv = UI.qty === "vel" && q0 === "accel" ? "vel" : UI.qty === "acc" && q0 === "vel" ? "accel" : q0;
   const kicker = `${UI.hw && qv !== "sound" ? "Wm-weighted " + (qn[qv] || "level").toLowerCase() : qn[qv] || "Level"} · ${VIEW.bk} octave bands${viewMode() !== "bands" ? " + narrowband" : ""}`;
   const s0 = single ? VIEW.series[0] : VIEW.mean; const rk = single ? (VIEW.hasW ? (UI.W === "raw" ? "A" : UI.W) : "raw") : VIEW.drawKeys[0];
   const result = s0 && s0.tot[rk] != null ? `${single ? "" : "Mean "}${mLabel(UI.metric, rk, VIEW.hasW)} = ${yLin() ? fmtLin((s0.lk || 1)*Math.pow(10, s0.tot[rk]/20)) + " " + VIEW.linUnit : fmt(s0.tot[rk], 1) + " " + unitOf(rk)}` : "";
-  c.textBaseline = "top"; c.textAlign = "left";
-  // three rows: kicker · title with the result on the right · subtitle across the full width
-  c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillText(kicker.toUpperCase().split("").join(String.fromCharCode(8202)), pad, pad);
-  c.font = `600 ${15*sc*FS}px ${K.sans}`; const rw = result ? c.measureText(result).width + 24*sc : 0;
-  if (result){ c.textAlign = "right"; c.fillStyle = K.ink; c.fillText(result, Wd - pad, pad + 18*sc); c.textAlign = "left"; }
-  c.fillStyle = K.ink; c.font = `600 ${15*sc*FS}px ${K.sans}`; c.fillText(ellipsize(c, cfg.title, Wd - 2*pad - rw), pad, pad + 18*sc);
-  c.fillStyle = K.muted; c.font = `${12*sc*FS}px ${K.sans}`; c.fillText(ellipsize(c, cfg.subtitle, Wd - 2*pad), pad, pad + 44*sc);
-  const top = pad + 72*sc, bottom = Ht - pad - (cfg.footer ? 20*sc : 0);
-  c.strokeStyle = K.line; c.lineWidth = sc; c.beginPath(); c.moveTo(pad, top - 6*sc); c.lineTo(Wd - pad, top - 6*sc); c.stroke();
-  // legend column
-  const legW = cfg.legend ? 215*sc : 0;
+  // header: only the parts switched on
+  const showK = hd.kicker !== false, showT = hd.title !== false && cfg.title, showR = hd.result !== false && result, showS = hd.subtitle !== false && cfg.subtitle;
+  let y0 = pad; c.textBaseline = "top"; c.textAlign = "left";
+  if (showK){ c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillText(ellipsize(c, kicker.toUpperCase(), Wd - 2*pad).split("").join(String.fromCharCode(8202)), pad, y0); y0 += 18*sc; }
+  if (showT || showR){
+    c.font = `600 ${15*sc*FS}px ${K.sans}`; const rw = showR ? c.measureText(result).width + 24*sc : 0;
+    if (showR){ c.textAlign = "right"; c.fillStyle = K.ink; c.fillText(result, Wd - pad, y0); c.textAlign = "left"; }
+    if (showT){ c.fillStyle = K.ink; c.fillText(ellipsize(c, cfg.title, Wd - 2*pad - rw), pad, y0); }
+    y0 += 26*sc;
+  }
+  if (showS){ c.fillStyle = K.muted; c.font = `${12*sc*FS}px ${K.sans}`; c.fillText(ellipsize(c, cfg.subtitle, Wd - 2*pad), pad, y0); y0 += 26*sc; }
+  const anyHead = showK || showT || showR || showS;
+  const top = anyHead ? y0 + 2*sc : pad, bottom0 = Ht - pad - (cfg.footer ? 20*sc : 0);
+  if (anyHead){ c.strokeStyle = K.line; c.lineWidth = sc; c.beginPath(); c.moveTo(pad, top - 6*sc); c.lineTo(Wd - pad, top - 6*sc); c.stroke(); }
+  // legend: right column, below the chart, or none
+  const pos = cfg.legend === false ? "none" : (lg.pos || "right");
+  const rows = pos === "none" ? [] : reportLegendRows(cfg, K);
+  const showHead = lg.head !== false, showUnits = lg.units !== false;
+  const rowH = 21*sc, vw = lg.values === false ? 0 : 62*sc;
+  const unitsTxt = `Values in ${yLin() ? VIEW.linUnit + " RMS" : cfg.cursor ? curUnit() : (VIEW.kind === "single" ? "dB" : unitOf(VIEW.drawKeys[0]))}`;
+  let legW = 0, legH = 0, colW = 0, ncol = 1;
+  if (pos === "right") legW = 215*sc;
+  if (pos === "below" && rows.length){ colW = 250*sc; ncol = Math.max(1, Math.min(rows.length, Math.floor((Wd - 2*pad + 16*sc)/(colW + 16*sc)))); colW = (Wd - 2*pad - (ncol - 1)*16*sc)/ncol;
+    legH = (showHead ? 26*sc : 0) + Math.ceil(rows.length/ncol)*rowH + (showUnits && vw ? 18*sc : 0) + 10*sc; }
+  const bottom = bottom0 - legH;
   const chartW = Wd - 2*pad - (legW ? legW + 16*sc : 0);
   const rowSrc = single ? VIEW.series[0] : VIEW.mean;
   cv.geo = drawSpectrum(c, pad - 10*sc, top, chartW + 10*sc, bottom - top, K, { scale: sc, cursor: cfg.cursor, corner: false, rows: cfg.rows !== false && rowSrc ? [{ label: single ? mLabel(UI.metric, UI.W, VIEW.hasW) : "Mean", s: rowSrc, bold: true }] : [] });
-  if (legW){
+  const drawRow = (r, lx, ly, w) => {
+    if (r.color) drawMarker(c, r.shape, lx + 5*sc, ly + rowH/2, (r.bold ? 5.2 : 4.6)*sc, K.bg, r.color, (r.bold ? 2.4 : 1.7)*sc);
+    c.fillStyle = r.hl ? K.cur : K.ink; c.font = `${r.hl || r.bold ? "600 " : ""}${12.5*sc*FS}px ${K.sans}`; c.textAlign = "left"; c.textBaseline = "middle";
+    const nx = lx + (r.color ? 16*sc : 0);
+    c.fillText(ellipsize(c, r.name, w - vw - (nx - lx) - 6*sc), nx, ly + rowH/2);
+    if (r.val !== undefined && vw){ c.textAlign = "right"; c.font = `${r.hl || r.bold ? "600 " : ""}${12.5*sc*FS}px ${K.mono}`; c.fillText(dv(r.val, r.s || VIEW.series[0]), lx + w, ly + rowH/2); c.textAlign = "left"; }
+    c.strokeStyle = K.line; c.setLineDash([1*sc, 2*sc]); c.beginPath(); c.moveTo(lx, ly + rowH); c.lineTo(lx + w, ly + rowH); c.stroke(); c.setLineDash([]);
+  };
+  if (pos === "right"){
     const lx = pad + chartW + 16*sc; let ly = top + 4*sc;
     c.textAlign = "left"; c.textBaseline = "middle";
-    c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillText(cfg.legendHead.toUpperCase(), lx, ly + 6*sc); ly += 18*sc;
-    c.fillStyle = K.cur; c.font = `500 ${15*sc*FS}px ${K.mono}`; c.fillText(cfg.legendSub, lx, ly + 6*sc); ly += 24*sc;
-    const rowH = 21*sc; const vw = 62*sc;
-    const rows = single ? cfg.singleRows : visSer().map(s => ({ s, color: serColor(K, s), shape: s.shape, name: s.name, val: cfg.cursor ? valAt(s) : s.tot[VIEW.drawKeys[0]] }));
-    if (!single && VIEW.mean) rows.push({ s: VIEW.mean, color: K.ink, shape: "circle", name: VIEW.mean.name, val: cfg.cursor ? valAt(VIEW.mean) : VIEW.mean.tot[VIEW.drawKeys[0]], bold: true });
-    if (!single) for (const Lm of VIEW.lims || []) rows.push({ s: VIEW.series[0], color: Lm.color, shape: "square", name: `${Lm.name} (limit)`, val: cfg.cursor && !isTot(UI.cursor) ? limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)) : undefined });
-    for (const r of rows){
-      if (ly + rowH > bottom) break;
-      if (r.color) drawMarker(c, r.shape, lx + 5*sc, ly + rowH/2, (r.bold ? 5.2 : 4.6)*sc, K.bg, r.color, (r.bold ? 2.4 : 1.7)*sc);
-      c.fillStyle = r.hl ? K.cur : K.ink; c.font = `${r.hl || r.bold ? "600 " : ""}${12.5*sc*FS}px ${K.sans}`;
-      const nx = lx + (r.color ? 16*sc : 0);
-      c.fillText(ellipsize(c, r.name, legW - vw - (nx - lx) - 6*sc), nx, ly + rowH/2);
-      if (r.val !== undefined){ c.textAlign = "right"; c.font = `${r.hl || r.bold ? "600 " : ""}${12.5*sc*FS}px ${K.mono}`; c.fillText(dv(r.val, r.s || VIEW.series[0]), lx + legW, ly + rowH/2); c.textAlign = "left"; }
-      c.strokeStyle = K.line; c.setLineDash([1*sc, 2*sc]); c.beginPath(); c.moveTo(lx, ly + rowH); c.lineTo(lx + legW, ly + rowH); c.stroke(); c.setLineDash([]);
-      ly += rowH;
-    }
-    c.fillStyle = K.muted; c.font = `${10.5*sc*FS}px ${K.sans}`; c.fillText(`Values in ${yLin() ? VIEW.linUnit + " RMS" : cfg.cursor ? curUnit() : (VIEW.kind === "single" ? "dB" : unitOf(VIEW.drawKeys[0]))}`, lx, ly + 12*sc);
+    if (showHead){ c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillText(cfg.legendHead.toUpperCase(), lx, ly + 6*sc); ly += 18*sc;
+      if (cfg.legendSub){ c.fillStyle = K.cur; c.font = `500 ${15*sc*FS}px ${K.mono}`; c.fillText(cfg.legendSub, lx, ly + 6*sc); ly += 24*sc; } }
+    for (const r of rows){ if (ly + rowH > bottom) break; drawRow(r, lx, ly, legW); ly += rowH; }
+    if (showUnits && vw){ c.fillStyle = K.muted; c.font = `${10.5*sc*FS}px ${K.sans}`; c.textBaseline = "middle"; c.fillText(unitsTxt, lx, ly + 12*sc); }
+  } else if (pos === "below" && rows.length){
+    let ly = bottom + 8*sc; const lx0 = pad;
+    if (showHead){ c.textAlign = "left"; c.textBaseline = "middle"; c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; const h1 = cfg.legendHead.toUpperCase(); c.fillText(h1, lx0, ly + 9*sc);
+      if (cfg.legendSub){ const w1 = c.measureText(h1).width; c.fillStyle = K.cur; c.font = `500 ${13*sc*FS}px ${K.mono}`; c.fillText(cfg.legendSub, lx0 + w1 + 12*sc, ly + 9*sc); } ly += 26*sc; }
+    const nr = Math.ceil(rows.length/ncol);
+    rows.forEach((r, i) => { const col = Math.floor(i/nr), rr = i % nr; drawRow(r, lx0 + col*(colW + 16*sc), ly + rr*rowH, colW); });
+    if (showUnits && vw){ c.fillStyle = K.muted; c.font = `${10.5*sc*FS}px ${K.sans}`; c.textAlign = "left"; c.textBaseline = "middle"; c.fillText(unitsTxt, lx0, ly + nr*rowH + 10*sc); }
   }
   if (cfg.footer){ c.fillStyle = K.muted; c.font = `${10*sc*FS}px ${K.mono}`; c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText(ellipsize(c, cfg.footer, Wd - 2*pad), pad, Ht - pad + 4*sc); }
   return cv;
@@ -1825,8 +1856,8 @@ function reportCfg(over = {}){
     const j = isTot(UI.cursor) ? -1 : n0.d.f.indexOf(UI.cursor);
     const nbCur = !isTot(UI.cursor) && curNb() && UI.nbf && VIEW.series[0] && VIEW.series[0].nb;   // cursor on the narrowband: show that line's value, as on the chart
     singleRows = Object.keys(n0.d.m).map(m => { const wd = !!n0.d.w[m]; const k = isTot(UI.cursor) ? (wd ? UI.cursor : "raw") : (wd ? UI.W : "raw"); return { name: mLabel(m, k, wd), val: isTot(UI.cursor) ? esum(dispVals(n0.d, m, k)) : (nbCur && m === UI.metric ? nbVal(VIEW.series[0], UI.nbf) : j >= 0 ? dispVals(n0.d, m, k)[j] : null), hl: m === UI.metric }; });
-    const bgS = VIEW.series.find(s => s.bg); if (bgS) singleRows.push({ name: `${bgS.name} (background)`, val: valAt(bgS), s: bgS, color: REPORT_COLORS.muted, shape: "diamond" });
-    for (const Lm of VIEW.lims || []) singleRows.push({ name: `${Lm.name} (limit)`, val: isTot(UI.cursor) ? undefined : limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)), s: VIEW.series[0], color: Lm.color, shape: "square" });
+    const bgS = VIEW.series.find(s => s.bg); if (bgS) singleRows.push({ name: `${bgS.name} (background)`, val: valAt(bgS), s: bgS, color: REPORT_COLORS.muted, shape: "diamond", kind: "bg" });
+    for (const Lm of VIEW.lims || []) singleRows.push({ name: `${Lm.name} (limit)`, val: isTot(UI.cursor) ? undefined : limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)), s: VIEW.series[0], color: Lm.color, shape: "square", kind: "lim" });
     if (VIEW.hasW){ const eqM = Object.keys(n0.d.m).find(m => /eq/i.test(m)) || UI.metric; singleRows.push({ name: " ", val: undefined }); TOTKEYS.forEach(k => singleRows.push({ name: `${mLabel(eqM, k, 1)} total`, val: esum(bandVals(n0.d, eqM, k)) })); }
   }
   const src = [...new Set(VIEW.ms.map(n => n.d.src).filter(Boolean))].join(", ");
@@ -1840,40 +1871,66 @@ function reportCfg(over = {}){
 }
 function reportDialog(){
   if (!VIEW){ toast("Select a measurement or folder first"); return; }
-  const st = reportDialog.state || (reportDialog.state = { size: "1600x900", cursor: true, legend: true, footer: true });
+  const st = reportDialog.state || (reportDialog.state = { aspect: "16:9", width: 1600, cw: 1600, ch: 1200, cursor: true, legend: true, footer: true, hd: { kicker: true, title: true, result: true, subtitle: true }, lg: { pos: "right", head: true, values: true, curves: true, mean: true, bg: true, lims: true, units: true } });
+  const single = VIEW.kind === "single"; const sub0 = reportCfg({}).subtitle;
+  const ck = (id, on, lab, title) => `<label${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="${id}" ${on ? "checked" : ""}> ${lab}</label>`;
   const b = document.createElement("div"); b.style.display = "contents";
-  b.innerHTML = `<label for="rTitle" style="color:var(--muted)">Title</label><input type="text" id="rTitle" value="${esc(VIEW.title)}">
-    <div class="opts">
-      <label for="rSize">Size <select id="rSize">${Object.keys(REPORT_SIZES).map(k => `<option ${k === st.size ? "selected" : ""}>${k}</option>`).join("")}</select></label>
-      <label><input type="checkbox" id="rCur" ${st.cursor ? "checked" : ""}> Cursor and values (${esc(curLabel())})</label>
-      <label><input type="checkbox" id="rLeg" ${st.legend ? "checked" : ""}> Legend column</label>
-      <label><input type="checkbox" id="rFoot" ${st.footer ? "checked" : ""}> Footer with time and source</label>
-      <label><input type="checkbox" id="rRows" ${st.rows !== false ? "checked" : ""}> Values under the axis (when they fit)</label>
+  b.innerHTML = `<div class="repgrid">
+    <div class="repctl">
+      <div class="sec-h"><h4>Size</h4><span class="hint" id="rDpi"></span></div>
+      <div class="opts">
+        <label for="rAsp">Shape <select id="rAsp">${Object.keys(REPORT_ASPECT).map(k => `<option value="${k}" ${k === st.aspect ? "selected" : ""}>${{ "16:9": "16:9 wide", "3:2": "3:2", "4:3": "4:3", "1:1": "1:1 square", "3:4": "3:4 portrait" }[k]}</option>`).join("")}<option value="custom" ${st.aspect === "custom" ? "selected" : ""}>Custom…</option></select></label>
+        <label for="rW" class="rstd">Width <select id="rW">${REPORT_WIDTHS.map(w => `<option value="${w}" ${w === st.width ? "selected" : ""}>${w} px</option>`).join("")}</select></label>
+        <label for="rCw" class="rcus">W <input type="number" id="rCw" min="400" max="6000" step="100" value="${st.cw}"></label><label for="rCh" class="rcus">H <input type="number" id="rCh" min="300" max="6000" step="100" value="${st.ch}"></label>
+      </div>
+      <div class="sec-h"><h4>Header</h4></div>
+      <div class="opts">${ck("hK", st.hd.kicker, "Quantity line")}${ck("hT", st.hd.title, "Title")}${ck("hR", st.hd.result, "Overall value")}${ck("hS", st.hd.subtitle, "Details line")}</div>
+      <label for="rTitle" style="color:var(--muted)">Title</label><input type="text" id="rTitle" value="${esc(VIEW.title)}">
+      <label for="rSub" style="color:var(--muted)">Details line</label><input type="text" id="rSub" value="${esc(sub0)}">
+      <div class="sec-h"><h4>Legend</h4></div>
+      <div class="opts">
+        <label for="rLpos">Position <select id="rLpos"><option value="right" ${st.legend && st.lg.pos === "right" ? "selected" : ""}>Right column</option><option value="below" ${st.legend && st.lg.pos === "below" ? "selected" : ""}>Below the chart</option><option value="none" ${!st.legend ? "selected" : ""}>None</option></select></label>
+        ${ck("lH", st.lg.head, "Heading and cursor frequency")}${ck("lV", st.lg.values, "Values")}${!single ? ck("lC", st.lg.curves, "One row per curve") : ""}${!single && VIEW.mean ? ck("lM", st.lg.mean, "Mean") : ""}${VIEW.series.some(s => s.bg) ? ck("lB", st.lg.bg, "Background") : ""}${VIEW.lims && VIEW.lims.length ? ck("lL", st.lg.lims, "Limits") : ""}${ck("lU", st.lg.units, "Units note")}
+      </div>
+      <div class="sec-h"><h4>Chart</h4></div>
+      <div class="opts">${ck("rCur", st.cursor, `Cursor (${esc(curLabel())})`)}${ck("rRows", st.rows !== false, "Values under the axis (when they fit)")}${ck("rFoot", st.footer, "Footer with time and source")}</div>
     </div>
-    <img class="prev" id="rPrev" alt="Report image preview">
-    <div class="hint">Move the cursor on the spectrum (band or A/C/Z total) before opening this, and hide rows in the measurement list to leave them out.</div>`;
+    <div class="repprev"><img class="prev" id="rPrev" alt="Report image preview"><div class="hint">Move the cursor on the spectrum (band or A/C/Z total) before opening this, and hide rows in the measurement list to leave them out.</div></div>
+  </div>`;
   // batch: one image per measurement of this folder, with the look of the open one
   const bctx = viewCtx(); const bfid = bctx ? (bctx.folder || vsKeyOf(bctx)) : null;
   const bids = bfid && N(bfid) ? measUnder(bfid).filter(i => !["ae", "rt", "limit", "weight"].includes(N(i).d.kind)) : [];
   if (bids.length > 1){
-    b.querySelector(".opts").insertAdjacentHTML("beforeend", `<div class="batch" style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:8px;border-top:1px solid var(--line)">
+    b.querySelector(".repctl").insertAdjacentHTML("beforeend", `<div class="batch" style="display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:8px;border-top:1px solid var(--line)">
       <label><input type="checkbox" id="rAll" ${st.all ? "checked" : ""}> <b>Save all ${bids.length} measurements of “${esc(N(bfid).name)}”</b> with this appearance (one PNG each)</label>
       <label><input type="checkbox" id="rSameY" ${st.sameY !== false ? "checked" : ""}> Same Y axis on all images</label></div>`);
   }
+  const g = id => b.querySelector("#" + id); const on = (id, d) => g(id) ? g(id).checked : d;
   let cv;
+  const wh = () => { if (st.aspect === "custom") return [Math.max(400, Math.min(6000, +st.cw || 1600)), Math.max(300, Math.min(6000, +st.ch || 1200))]; const [a, bb] = REPORT_ASPECT[st.aspect] || [16, 9]; return [st.width, Math.round(st.width*bb/a)]; };
   const mkCfg = title => {
-    const cfg = reportCfg({ size: st.size, title: title || VIEW.title, cursor: st.cursor, legend: st.legend });
-    if (!st.cursor){ cfg.legendHead = VIEW.kind === "single" ? "Totals" : "Measurements"; cfg.legendSub = VIEW.kind === "single" ? "" : `${mLabel(UI.metric, VIEW.drawKeys[0], VIEW.hasW)} total`; if (VIEW.kind === "single") cfg.singleRows = cfg.singleRows.filter(r => / total$/.test(r.name)); }
-    if (!st.footer) cfg.footer = ""; cfg.rows = st.rows;
+    const [W, H] = wh();
+    const cfg = reportCfg({ W, H, title: title || VIEW.title, cursor: st.cursor, legend: st.legend });
+    if (!st.cursor){ cfg.legendHead = VIEW.kind === "single" ? "Totals" : "Measurements"; cfg.legendSub = VIEW.kind === "single" ? "" : `${mLabel(UI.metric, VIEW.drawKeys[0], VIEW.hasW)} total`; if (VIEW.kind === "single") cfg.singleRows = cfg.singleRows.filter(r => / total$/.test(r.name) || r.kind === "bg"); }
+    if (!st.footer) cfg.footer = ""; cfg.rows = st.rows; cfg.hd = { ...st.hd }; cfg.lg = { ...st.lg };
+    if (st.subEdited) cfg.subtitle = st.sub;
     return cfg;
   };
-  const build = () => {
-    st.size = b.querySelector("#rSize").value; st.cursor = b.querySelector("#rCur").checked; st.legend = b.querySelector("#rLeg").checked; st.footer = b.querySelector("#rFoot").checked; st.rows = b.querySelector("#rRows").checked;
+  const build = e => {
+    st.aspect = g("rAsp").value; st.width = +g("rW").value; st.cw = +g("rCw").value; st.ch = +g("rCh").value;
+    b.querySelectorAll(".rstd").forEach(x => x.style.display = st.aspect === "custom" ? "none" : ""); b.querySelectorAll(".rcus").forEach(x => x.style.display = st.aspect === "custom" ? "" : "none");
+    st.cursor = on("rCur", true); st.footer = on("rFoot", true); st.rows = on("rRows", true);
+    st.hd = { kicker: on("hK", true), title: on("hT", true), result: on("hR", true), subtitle: on("hS", true) };
+    const lp = g("rLpos").value; st.legend = lp !== "none";
+    st.lg = { pos: lp === "none" ? st.lg.pos : lp, head: on("lH", true), values: on("lV", true), curves: on("lC", st.lg.curves), mean: on("lM", st.lg.mean), bg: on("lB", st.lg.bg), lims: on("lL", st.lg.lims), units: on("lU", true) };
+    if (e && e.target && e.target.id === "rSub"){ st.subEdited = true; st.sub = g("rSub").value; }
     if (b.querySelector("#rAll")){ st.all = b.querySelector("#rAll").checked; st.sameY = b.querySelector("#rSameY").checked; b.querySelector("#rSameY").disabled = !st.all; }
-    cv = renderReport(mkCfg(b.querySelector("#rTitle").value)); b.querySelector("#rPrev").src = cv.toDataURL("image/png");
+    const [W, H] = wh(); g("rDpi").textContent = `${W} × ${H} px · ${(W/300*2.54).toFixed(1)} × ${(H/300*2.54).toFixed(1)} cm at 300 dpi`;
+    cv = renderReport(mkCfg(g("rTitle").value)); g("rPrev").src = cv.toDataURL("image/png");
   };
+  st.subEdited = false;
   b.addEventListener("input", build); b.addEventListener("change", build);
-  const fname = () => safeName(b.querySelector("#rTitle").value || VIEW.title) + "_" + safeName(isTot(UI.cursor) ? UI.cursor + "total" : fLab(UI.cursor) + "Hz") + ".png";
+  const fname = () => safeName(g("rTitle").value || VIEW.title) + "_" + safeName(isTot(UI.cursor) ? UI.cursor + "total" : fLab(UI.cursor) + "Hz") + ".png";
   modal("Report image", b, [
     { label: "Close" },
     { label: "Copy image", run: () => {
@@ -1883,9 +1940,9 @@ function reportDialog(){
       } catch(e){ toast("This view doesn't allow copying images. Use Save PNG."); }
       return false;
     } },
-    { label: "Save PNG", primary: true, run: () => { if (st.all && b.querySelector("#rAll")){ reportBatch(bids, bfid, mkCfg, st.sameY); return false; } const url = cv.toDataURL("image/png"); const bin = atob(url.split(",")[1]); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); saveWithPicker(fname(), new Blob([u8], { type: "image/png" }), "PNG image", "image/png", ".png"); return false; } },
+    { label: "Save PNG", primary: true, run: () => { if (st.all && b.querySelector("#rAll")){ reportBatch(bids, bfid, mkCfg, st.sameY); return false; } cv.toBlob(bl => saveWithPicker(fname(), bl, "PNG image", "image/png", ".png"), "image/png"); return false; } },
   ], true);
-  (document.fonts?.ready || Promise.resolve()).then(build);
+  (document.fonts?.ready || Promise.resolve()).then(() => build());
   build();
 }
 
@@ -2897,8 +2954,8 @@ function drawAe(){
       const qm = $("#aeQmap"); if (qm) qm.onclick = e => { const c0 = e.target.closest("[data-k]"); if (!c0) return; UI.aeBand = F[+c0.dataset.k]; const sel = $("#aeBand"); if (sel) sel.value = UI.aeBand; drawAe(); }; } }
 }
 function aeReportCanvas(n, size){
-  const [W, H] = size === "1200x900" ? [1200, 900] : size === "2000x1400" ? [2000, 1400] : [1600, 1200];
-  const sc = W/760; const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"); const K = REPORT_COLORS;
+  const [W, H] = String(size || "1600x1200").split("x").map(Number);
+  const sc = Math.min(W, H*1.9)/760; const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"); const K = REPORT_COLORS;
   c.fillStyle = "#fff"; c.fillRect(0, 0, W, H);
   const r = aeCompute(n.d); const o = aeROpts(n, r, K, true); o.scale = sc; o.head = aeHead(n, r, true);
   drawBandChart(c, 24*sc, 16*sc, W - 48*sc, H - 32*sc, K, o);
@@ -2906,7 +2963,7 @@ function aeReportCanvas(n, size){
 }
 function aeImageDialog(n){
   const b = document.createElement("div"); b.style.display = "contents";
-  b.innerHTML = `<div class="opts"><label for="aiSize">Size <select id="aiSize"><option>1600x1200</option><option>1200x900</option><option>2000x1400</option></select></label></div><img class="prev" id="aiPrev" alt="R' chart preview">`;
+  b.innerHTML = `<div class="opts"><label for="aiSize">Size <select id="aiSize">${["1600x1200", "1200x900", "2000x1400", "1200x1200", "1600x1600", "2400x2400"].map(x => `<option>${x}</option>`).join("")}</select></label></div><img class="prev" id="aiPrev" alt="R' chart preview">`;
   let cv; const build = () => { cv = aeReportCanvas(n, b.querySelector("#aiSize").value); b.querySelector("#aiPrev").src = cv.toDataURL("image/png"); };
   b.addEventListener("change", build);
   modal("R' chart for the report", b, [
@@ -3097,8 +3154,8 @@ function bindRtSummary(ids){
   draw(); RTSUM = draw;
 }
 function rtReportCanvas(ids, size){
-  const [W, H] = size === "1200x700" ? [1200, 700] : size === "2000x1100" ? [2000, 1100] : [1600, 900];
-  const sc = W/760; const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"); const K = REPORT_COLORS;
+  const [W, H] = String(size || "1600x900").split("x").map(Number);
+  const sc = Math.min(W, H*1.9)/760; const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"); const K = REPORT_COLORS;
   c.fillStyle = "#fff"; c.fillRect(0, 0, W, H);
   const { F, sets } = rtSets(ids); const tk = UI.rtT || "T20"; const ser = rtSeries(K, F, sets, true);
   const vals = sets.length === 1 ? sets[0][tk] : ser.at(-1).vals; const mid = rtMid(F, vals);
@@ -3111,7 +3168,7 @@ function rtReportCanvas(ids, size){
 }
 function rtImageDialog(ids){
   const b = document.createElement("div"); b.style.display = "contents";
-  b.innerHTML = `<div class="opts"><label for="riSize">Size <select id="riSize"><option>1600x900</option><option>1200x700</option><option>2000x1100</option></select></label></div><img class="prev" id="riPrev" alt="Reverberation time chart preview">`;
+  b.innerHTML = `<div class="opts"><label for="riSize">Size <select id="riSize">${["1600x900", "1200x700", "2000x1100", "1600x1200", "1200x1200", "1600x1600", "2400x2400", "1200x1600"].map(x => `<option>${x}</option>`).join("")}</select></label></div><img class="prev" id="riPrev" alt="Reverberation time chart preview">`;
   let cv; const build = () => { cv = rtReportCanvas(ids, b.querySelector("#riSize").value); b.querySelector("#riPrev").src = cv.toDataURL("image/png"); };
   b.addEventListener("change", build);
   const name = ids.length === 1 ? N(ids[0]).name : (pathOf(N(ids[0]).parent).at(-1) || "reverberation");
