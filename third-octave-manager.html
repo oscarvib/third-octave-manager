@@ -204,6 +204,9 @@ table.list tfoot td{border-top:2px solid var(--line);cursor:default}
 .timebox{position:relative;height:96px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
 #tsig{position:absolute;inset:0;width:100%;height:100%;cursor:col-resize;touch-action:none}
 .aegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+table.bands td.over{color:#c8322b;font-weight:700;background:rgba(200,50,43,.08)}
+.ddl{position:relative}.ddl>summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:4px 10px;background:var(--panel);font-size:13px}.ddl>summary::-webkit-details-marker{display:none}
+.ddl-p{position:absolute;z-index:20;top:calc(100% + 4px);left:0;min-width:320px;max-height:320px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:8px 10px;display:flex;flex-direction:column;gap:6px}.ddl-p label{display:flex;gap:6px;align-items:baseline;font-size:13px}
 .aebox{position:relative;height:380px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
 .aebox.wide{height:360px}
 .aebox canvas{position:absolute;inset:0;width:100%;height:100%}
@@ -239,7 +242,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.5 · 17 Nov 2026">v1.5</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.6 · 17 Nov 2026">v1.6</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -587,7 +590,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "1.5";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "1.6";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -839,6 +842,7 @@ const ICO_FO = '<svg viewBox="0 0 16 16"><path d="M1.5 3.5h4.3l1.5 1.5h6v2H4.2l-
 const ICO_M = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M4.5 12.5V8.5M7 12.5V5M9.5 12.5V7M12 12.5V10" stroke-width="1.7"/></svg>';
 const ICO_T = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 8h1.5l1.2-3.5 1.6 7 1.6-6 1.4 4.5 1-2H13" stroke-width="1.3" stroke-linejoin="round"/></svg>';
 const ICO_RT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3.5 4.5c2 0 2.5 1 3.5 3s2.5 4 5.5 4" stroke-width="1.4" stroke-linecap="round"/><path d="M3.5 3.5v9h9" stroke-width="1" opacity=".6"/></svg>';
+const ICO_LIM = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 5h3v3h3v-2h4" stroke="#c8322b" stroke-width="1.8" stroke-linejoin="round"/><path d="M3 12.5h10" stroke-width="1" opacity=".5"/></svg>';
 const ICO_AE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="2.5" width="4.5" height="11" rx="1" stroke-width="1.1"/><rect x="10" y="2.5" width="4.5" height="11" rx="1" stroke-width="1.1"/><path d="M8 2v12" stroke-width="2"/></svg>';
 const ICO_C = '<svg viewBox="0 0 10 10"><path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 const ICO_MORE = '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>';
@@ -859,7 +863,7 @@ function renderTree(){
     const sub = f ? `<span class="cnt" title="measurements inside">${measUnder(id).length}</span>` : `<span class="sub">${esc(fmtTime(parseStart(n.d.start)))}</span>`;
     return `<div class="${cls}" data-id="${id}" style="--lvl:${lvl}" draggable="true" role="treeitem" aria-level="${lvl+1}" aria-selected="${UI.sel.has(id)}"${f ? ` aria-expanded="${!!n.open}"` : ""}>
       <button class="caret ${f && n.kids.length ? "" : "none"}" tabindex="-1" data-act="toggle" aria-label="Expand or collapse">${ICO_C}</button>
-      <span class="ico">${f ? (n.open ? ICO_FO : ICO_F) : (n.d.kind === "time" ? ICO_T : n.d.kind === "ae" ? ICO_AE : n.d.kind === "rt" ? ICO_RT : ICO_M)}</span><span class="lbl">${esc(n.name)}</span>${sub}
+      <span class="ico">${f ? (n.open ? ICO_FO : ICO_F) : (n.d.kind === "time" ? ICO_T : n.d.kind === "ae" ? ICO_AE : n.d.kind === "rt" ? ICO_RT : n.d.kind === "limit" ? ICO_LIM : ICO_M)}</span><span class="lbl">${esc(n.name)}</span>${sub}
       <button class="ib more" tabindex="-1" data-act="menu" aria-label="Options">${ICO_MORE}</button></div>`;
   }).join("");
   el.scrollTop = st;
@@ -939,6 +943,7 @@ function menuFor(id, x, y){
     return openMenu(x, y, [
       { label: "New folder", run: () => newFolder("root") },
       { label: "Import Excel…", run: () => pickXlsx("root") },
+      { label: "New limit curve…", run: () => limitDialog("root") },
       ...(UI.cut.length ? [{ label: `Paste ${UI.cut.length} item(s) here`, run: () => paste("root") }] : []),
       "-",
       { label: "Expand all", run: () => setAllOpen(true) },
@@ -968,6 +973,7 @@ function menuFor(id, x, y){
       { label: "New subfolder", run: () => newFolder(id) },
       { label: "New folder at same level", run: () => newFolder(n.parent, N(n.parent).kids.indexOf(id) + 1) },
       { label: "Import Excel here…", run: () => pickXlsx(id) },
+      { label: "New limit curve…", run: () => limitDialog(id) },
       ...(UI.cut.length ? [{ label: `Paste ${UI.cut.length} item(s) here`, k: "Ctrl+V", run: () => paste(id) }] : []),
       "-",
       { label: "Rename", k: "F2", run: () => startRename(id) },
@@ -984,7 +990,7 @@ function menuFor(id, x, y){
     ], n.name);
   }
   return openMenu(x, y, [
-    { label: `Compare all “${n.name}”`, run: () => selectSameName(id) },
+    ...(n.d.kind === "limit" ? [{ label: "Edit limit curve…", run: () => limitDialog(n.parent, id) }] : [{ label: `Compare all “${n.name}”`, run: () => selectSameName(id) }]),
     { label: "Rename", k: "F2", run: () => startRename(id) },
     { label: "Move to…", run: () => moveDialog([id]) },
     { label: "Cut", k: "Ctrl+X", run: () => cut([id]) },
@@ -1125,7 +1131,7 @@ function newProject(){
 }
 function exportXlsx(ids){
   if (typeof XLSX === "undefined"){ toast("Excel library not available"); return; }
-  const ms = [...new Set(topLevel(ids).flatMap(measUnder))].filter(id => N(id).d.kind !== "ae" && N(id).d.kind !== "rt"); if (!ms.length){ toast("Nothing to export (insulation tests and reverberation times: use Copy table)"); return; }
+  const ms = [...new Set(topLevel(ids).flatMap(measUnder))].filter(id => !["ae", "rt", "limit"].includes(N(id).d.kind)); if (!ms.length){ toast("Nothing to export (insulation tests and reverberation times: use Copy table)"); return; }
   const metrics = [...new Set(ms.flatMap(id => Object.keys(N(id).d.m)))];
   const freqs = [...new Set(ms.flatMap(id => N(id).d.f))].sort((a, b) => a - b);
   const hdr = ["Project Name", "Start Time", "Elapsed Time"]; metrics.forEach(m => freqs.forEach(f => hdr.push(`${m} ${fExportLab(f)}`))); hdr.push("Folder");
@@ -1141,8 +1147,8 @@ const serColor = (K, s) => s.bg ? K.muted : K.pal[s.ci % K.pal.length];
 const cssPalette = () => { const cs = getComputedStyle(document.documentElement); return [1,2,3,4,5,6,7,8,9,10].map(i => cs.getPropertyValue("--s" + i).trim()); };
 function viewCtx(){
   const c = viewCtx0(); if (!c) return c;
-  const isAe = id => N(id).d.kind === "ae", isRt = id => N(id).d.kind === "rt";
-  c.aes = c.ids.filter(isAe); c.rts = c.ids.filter(isRt); c.ids = c.ids.filter(id => !isAe(id) && !isRt(id));
+  const isAe = id => N(id).d.kind === "ae", isRt = id => N(id).d.kind === "rt", isLim = id => N(id).d.kind === "limit";
+  c.aes = c.ids.filter(isAe); c.rts = c.ids.filter(isRt); c.lims = c.ids.filter(isLim); c.ids = c.ids.filter(id => !isAe(id) && !isRt(id) && !isLim(id));
   if (c.aes.length || c.rts.length) c.kind = c.ids.length > 1 ? "multi" : "single";
   return c;
 }
@@ -1160,7 +1166,7 @@ function viewCtx0(){
   return { kind: ms.length === 1 ? "single" : "multi", ids: ms, title: a.name, crumb: ["FILES", ...pathOf(a.id)].slice(0, -1).join(" \\ "), folder: a.id, gsrc };
 }
 /* each folder (or single measurement) keeps its own display settings; they travel with the project */
-const VS_KEYS = ["metric", "W", "b0", "b1", "yMin", "yMax", "yscale", "mode", "curOn", "qty", "showMean", "fz", "cursor", "nbf", "hw", "grp", "bgId", "meanOnly"];
+const VS_KEYS = ["metric", "W", "b0", "b1", "yMin", "yMax", "yscale", "mode", "curOn", "qty", "showMean", "fz", "cursor", "nbf", "hw", "grp", "bgId", "meanOnly", "lims"];
 const LASTVS = new Map(); let vsTimer = null;
 function vsKeyOf(ctx){ if (!ctx) return null; if (ctx.folder) return ctx.folder; return ctx.kind === "single" && ctx.ids.length === 1 && !(ctx.aes && ctx.aes.length) && N(ctx.ids[0]) ? N(ctx.ids[0]).parent : null; }   // measurements use their folder's settings
 function loadVS(key){
@@ -1239,7 +1245,7 @@ function buildView(){
   const qmap = {}; for (const n of ms) for (const m of Object.keys(n.d.m)){ const qc = qConv(n.d, m); if (qc) qmap[m] = qc.lab; }
   const lus = [...new Set(series.map(s => s.lu).filter(Boolean))];
   const V = { ...ctx, grouped, qmap, linUnit: lus.length === 1 ? lus[0] : null, anyVib: ms.some(n => Object.keys(n.d.m).some(m => { const q = qOf(n.d, m); return q === "accel" || q === "vel"; })), yLab: refs.length === 1 ? refs[0] : "dB", anyNb: series.some(s => s.nb), title, crumb, ms, metrics, freqs, series, hasW, totKeys, drawKeys, metric: UI.metric, sameName: U.sameName, bk, bandAxis: `${bk} octave band [Hz]` };
-  V.mean = meanSeries(V); V.meanOnly = !!(V.mean && UI.meanOnly); return V;
+  V.mean = meanSeries(V); V.meanOnly = !!(V.mean && UI.meanOnly); V.limNodes = ctx.lims; V.lims = []; return V;
 }
 const viewMode = () => (VIEW && VIEW.anyNb) ? (UI.mode || "both") : "bands";
 const curNb = () => { const m = viewMode(); return m === "nb" || (m === "both" && UI.curOn === "nb"); };
@@ -1314,9 +1320,11 @@ function renderView(){
   RTV = null; RTSUM = null;
   if (a0 && a0.t === "m" && a0.d.kind === "ae" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderAe(a0); return; }
   if (a0 && a0.t === "m" && a0.d.kind === "rt" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderRt(a0); return; }
-  VIEW = buildView();
+  LIMDRAW = null; if (a0 && a0.t === "m" && a0.d.kind === "limit" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderLimit(a0); return; }
+  VIEW = buildView(); if (VIEW && !VIEW.empty) VIEW.lims = viewLims();
   if (!VIEW){ v.innerHTML = `<div class="empty">${measUnder("root").length ? `<h2>Select a measurement</h2>Click a measurement in the tree to see its third-octave spectrum and LAeq. Click a folder, or Ctrl-click several measurements, to overlay them and compare.` : `<h2>Empty project</h2>Import an Excel file exported from the sound level meter, UNV time signals (.unv) from the acquisition system, or open a saved project (.json).`}</div>`; return; }
   if (VIEW.empty && ((VIEW.aes && VIEW.aes.length) || (VIEW.rts && VIEW.rts.length))){ const aes = VIEW.aes || [], rts = VIEW.rts || []; v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div>` + (rts.length ? rtSummaryHtml(rts) : "") + (aes.length ? aeSummaryHtml(aes) : ""); VIEW = null; if (rts.length) bindRtSummary(rts); if (aes.length) bindAeSummary(aes); return; }
+  if (VIEW.empty && VIEW.lims && VIEW.lims.length){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div><div class="sec-h"><h4>Limit curves (${VIEW.lims.length})</h4><span class="hint">Click one to see or edit it. To draw them over spectra: open a measurement or folder → Limits.</span></div><div class="tblwrap"><table class="list" id="limList"><thead><tr><th>Name</th><th>Quantity</th><th>Span</th><th>Range</th></tr></thead><tbody>${VIEW.lims.map(id => { const n = N(id); return `<tr data-id="${id}" style="cursor:pointer"><td>${esc(n.name)}</td><td>${esc(LIM_Q[n.d.q])}</td><td>${esc(LIM_SPAN[n.d.span])}</td><td>${fLabHz(n.d.f[0])}–${fLabHz(n.d.f.at(-1))}</td></tr>`; }).join("")}</tbody></table></div>`; VIEW = null; $("#limList").onclick = e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; UI.sel = new Set([tr.dataset.id]); UI.active = tr.dataset.id; renderTree(); renderView(); }; return; }
   if (VIEW.empty){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div><div class="empty">This folder is empty. Drag measurements here, or right-click → <b>Import Excel here…</b></div>`; VIEW = null; return; }
   const { ms, metrics, freqs, series, hasW, totKeys } = VIEW; const W = UI.W;
   const one = VIEW.kind === "single" ? ms[0] : null;
@@ -1350,6 +1358,7 @@ function renderView(){
     ${VIEW.kind === "multi" ? `<label for="cMeanM">Energetic mean <select id="cMeanM"><option value="off" ${UI.showMean === false ? "selected" : ""}>Off</option><option value="add" ${UI.showMean !== false && !UI.meanOnly ? "selected" : ""}>Added to the curves</option><option value="only" ${UI.showMean !== false && UI.meanOnly ? "selected" : ""}>Only the mean</option></select></label>
 ` : ""}
     <label for="cBg">Background <select id="cBg">${bgOptions(series)}</select></label>
+    ${limitsMenuHtml()}
     <span class="sp"><button class="btn primary" id="bReport" title="Create a PNG of this spectrum for a report"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><path d="m3.5 11 3-3.5 2.5 2.5 2-2 1.5 3"/></svg>Report image</button></span>
   </div>`;
   const chart = `<div class="hint" style="margin-bottom:-8px">Mouse wheel on the chart zooms the frequency axis · <kbd>⇧</kbd> + drag pans · double-click shows all bands</div><div class="chartwrap"><div class="chartbox"><canvas id="chart" tabindex="0" aria-label="Third-octave spectrum. Click or use the arrow keys to move the cursor across bands and the A, C, Z totals."></canvas></div><div class="readout" id="readout"></div></div>`;
@@ -1381,6 +1390,7 @@ function renderView(){
   if ($("#cMeanM")) $("#cMeanM").onchange = e => { const v = e.target.value; UI.showMean = v !== "off"; UI.meanOnly = v === "only"; UI.yMin = UI.yMax = null; renderView(); };
   if ($("#cGrp")) $("#cGrp").onclick = e => { const b = e.target.closest("button[data-g]"); if (!b) return; UI.grp = b.dataset.g; UI.bgId = null; UI.hidden = new Set(); UI.yMin = UI.yMax = null; renderView(); };
   if ($("#cBg")) $("#cBg").onchange = e => { UI.bgId = e.target.value || null; UI.yMin = UI.yMax = null; renderView(); };
+  bindLimitsMenu();
 
   $("#cMetric").onchange = e => { UI.metric = e.target.value; UI.yMin = UI.yMax = null; renderView(); };
   $("#cW").onclick = e => { const b = e.target.closest("button[data-w]"); if (!b || b.disabled) return; UI.W = b.dataset.w; UI.yMin = UI.yMax = null; renderView(); };
@@ -1412,7 +1422,7 @@ function renderBandTable(){
     thead = `<tr><th class="rh">${VIEW.hasW ? "Parameter · bands " + UI.W : "Parameter"}</th>${th}${thT}</tr>`;
     for (const m of Object.keys(n.d.m)){
       const wd = !!n.d.w[m]; const b = dispVals(n.d, m, wd ? UI.W : "raw");
-      rows += `<tr><th class="rh">${esc(mLabel(m, UI.W, wd))}</th>${fs.map(f => { const j = n.d.f.indexOf(f); return `<td class="${f === cur ? "cur" : ""}">${fmt(j >= 0 ? b[j] : null)}</td>`; }).join("")}${tk.map(k => `<td class="tot ${k === cur ? "cur" : ""}">${fmt(esum(dispVals(n.d, m, wd ? k : "raw")))}</td>`).join("")}</tr>`;
+      rows += `<tr><th class="rh">${esc(mLabel(m, UI.W, wd))}</th>${fs.map(f => { const j = n.d.f.indexOf(f); const x = j >= 0 ? b[j] : null; const l = m === UI.metric ? limAtBand(f) : null; return `<td class="${f === cur ? "cur" : ""}${x != null && l != null && x > l + 0.05 ? " over" : ""}">${fmt(x)}</td>`; }).join("")}${tk.map(k => `<td class="tot ${k === cur ? "cur" : ""}">${fmt(esum(dispVals(n.d, m, wd ? k : "raw")))}</td>`).join("")}</tr>`;
     }
     const bgS = VIEW.series.find(s => s.bg);
     if (bgS) rows += `<tr><th class="rh" title="${esc(bgS.name)}">${markerSvg("diamond", "var(--muted)")}${esc(bgS.name)} <span class="hint">background</span></th>${fs.map((f, i) => `<td class="${f === cur ? "cur" : ""}">${fmt(bgS.vals[i])}</td>`).join("")}${tk.map(k => `<td class="tot ${k === cur ? "cur" : ""}">${fmt(bgS.tot[k])}</td>`).join("")}</tr>`;
@@ -1420,8 +1430,10 @@ function renderBandTable(){
   } else {
     thead = `<tr><th class="rh">${esc(mLabel(UI.metric, UI.W, VIEW.hasW))}</th>${th}${thT}</tr>`;
     const MS = VIEW.mean;
-    for (const s of [...visSer(), ...(MS ? [MS] : [])]) if (!s.hidden) rows += `<tr class="${s.mean ? "meanrow" : ""}"><th class="rh" title="${esc(s.name)}">${markerSvg(s.shape, s.mean ? "var(--ink)" : s.color)}${esc(s.name)}</th>${s.vals.map((x, i) => `<td class="${fs[i] === cur ? "cur" : ""}">${fmt(x)}</td>`).join("")}${tk.map(k => `<td class="tot ${k === cur ? "cur" : ""}">${fmt(s.tot[k])}</td>`).join("")}</tr>`;
+    const lb = fs.map(f => limAtBand(f));
+    for (const s of [...visSer(), ...(MS ? [MS] : [])]) if (!s.hidden) rows += `<tr class="${s.mean ? "meanrow" : ""}"><th class="rh" title="${esc(s.name)}">${markerSvg(s.shape, s.mean ? "var(--ink)" : s.color)}${esc(s.name)}</th>${s.vals.map((x, i) => `<td class="${fs[i] === cur ? "cur" : ""}${!s.bg && x != null && lb[i] != null && x > lb[i] + 0.05 ? " over" : ""}">${fmt(x)}</td>`).join("")}${tk.map(k => `<td class="tot ${k === cur ? "cur" : ""}">${fmt(s.tot[k])}</td>`).join("")}</tr>`;
   }
+  for (const Lm of VIEW.lims || []) rows += `<tr><th class="rh" title="${esc(Lm.name)}"><span style="display:inline-block;width:12px;height:3px;background:${Lm.color};vertical-align:middle;margin-right:5px"></span>${esc(Lm.name)} <span class="hint">limit</span></th>${fs.map(f => { const v = limView(Lm.d, exactF(f)); return `<td class="${f === cur ? "cur" : ""}" style="color:${Lm.color}">${v == null ? "" : fmt(v)}</td>`; }).join("")}${tk.map(() => "<td></td>").join("")}</tr>`;
   el.innerHTML = `<table class="bands"><thead>${thead}</thead><tbody>${rows}</tbody></table>`;
   el.querySelector("thead").onclick = e => { const t = e.target.closest("th[data-c]"); if (!t) return; const c = t.dataset.c; setCursor(isNaN(+c) ? c : +c); };
 }
@@ -1457,6 +1469,11 @@ function renderReadout(){
     for (const s of vis){ const x = valAt(s); h += `<tr class="${x === mx && vs.length > 1 && !s.bg ? "max" : ""}"><td class="nm" title="${esc(s.name)}">${markerSvg(s.shape, s.color)}${esc(s.name)}${s.bg ? ' <span class="hint">background</span>' : ""}</td><td class="vl">${dBg(s)}${dv(x, s)}</td></tr>`; }
     if (VIEW.mean){ const x = valAt(VIEW.mean); h += `<tr class="mean"><td class="nm" title="${esc(VIEW.mean.name)}">${markerSvg("circle", "var(--ink)")}${esc(VIEW.mean.name)}</td><td class="vl">${dBg(VIEW.mean)}${dv(x, VIEW.mean)}</td></tr>`; }
     if (vs.length > 1) h += `<tr><td class="nm" style="color:var(--muted)">Spread max−min (dB)</td><td class="vl">${fmt(mx - Math.min(...vs))}</td></tr>`;
+  }
+  if (!isTot(c) && VIEW.lims && VIEW.lims.length){
+    const fq = curNb() && UI.nbf ? UI.nbf : exactF(c); const ref = VIEW.kind === "single" ? VIEW.series[0] : VIEW.mean;
+    for (const Lm of VIEW.lims){ const lv = limView(Lm.d, fq); if (lv == null) continue; const x = ref ? valAt(ref) : null;
+      h += `<tr><td class="nm" title="${esc(Lm.name)}"><span style="display:inline-block;width:12px;height:3px;background:${Lm.color};vertical-align:middle;margin-right:5px"></span>${esc(Lm.name)}</td><td class="vl">${x != null && !yLin() ? `<span class="${x > lv + 0.05 ? "q-bad" : "hint"}" title="${ref && ref.mean ? "mean" : "measurement"} − limit">${fmtD(x - lv)}</span> ` : ""}${dv(lv, VIEW.series[0])}</td></tr>`; }
   }
   h += `</table><div class="hint">Values in ${esc(yLin() ? VIEW.linUnit + " RMS" : curUnit())}. ${curNb() ? "Click or drag on the narrowband to read any line; <kbd>←</kbd> <kbd>→</kbd> step one line (<kbd>⇧</kbd> ten)." : "Click or drag on the spectrum, including the Leq column at the right (it follows the A/C/Z selection). With the chart focused, <kbd>←</kbd> <kbd>→</kbd> move the cursor."}</div>`;
   el.innerHTML = h;
@@ -1504,6 +1521,8 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
     [...ser, ...(M ? [M] : [])].forEach(s => { if (!s.nb) return; const k0 = Math.max(1, Math.ceil(Z0/s.nbdf)), k1 = Math.min(s.nb.length - 1, Math.floor(Z1/s.nbdf)); for (let k = k0; k <= k1; k++){ const v = nbVal(s, k*s.nbdf); if (v != null) nbv.push(T(v, s)); } });
     if (nbv.length){ nbv.sort((a, b) => a - b); all.push(nbv[Math.floor(nbv.length*0.02)]); all.push(nbv[nbv.length - 1]); }
   }
+  for (const Lm of VIEW.lims || []){ const d = Lm.d; if (d.span !== "nb"){ fs.forEach((f, k) => { if (!inZ(k)) return; const v = limView(d, exactF(f)); if (v != null) all.push(T(v, VIEW.series[0] || {})); }); }
+    else d.f.forEach(f => { if (f >= Z0 && f <= Z1){ const v = limView(d, f); if (v != null) all.push(T(v, VIEW.series[0] || {})); } }); }
   if (!all.length) all = lin ? [0, 1] : [0, 100];
   let lo, hi;
   if (lin){ const mx = Math.max(...all) || 1; const st0 = niceStep(mx*1.08/5); lo = UI.yMin ?? 0; hi = UI.yMax ?? Math.ceil(mx*1.08/st0)*st0; }
@@ -1594,6 +1613,7 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
     }
     if (mode !== "nb"){ ser.forEach(s => stair(s, col(s), 1.8*sc)); if (M) stair(M, K.ink, 3.4*sc, true); }
   }
+  if (VIEW.lims && VIEW.lims.length) drawLimits(c, K, { xF, y, T: v => T(v, VIEW.series[0] || {}), sc, Z0, Z1, L, BW });
   c.restore();
   // Leq column
   c.save(); c.beginPath(); c.rect(L + BW, Tp - 2, pw - BW + 2, ph + 2); c.clip();
@@ -1750,6 +1770,7 @@ function renderReport(cfg){
     const rowH = 21*sc; const vw = 62*sc;
     const rows = single ? cfg.singleRows : visSer().map(s => ({ s, color: serColor(K, s), shape: s.shape, name: s.name, val: cfg.cursor ? valAt(s) : s.tot[VIEW.drawKeys[0]] }));
     if (!single && VIEW.mean) rows.push({ s: VIEW.mean, color: K.ink, shape: "circle", name: VIEW.mean.name, val: cfg.cursor ? valAt(VIEW.mean) : VIEW.mean.tot[VIEW.drawKeys[0]], bold: true });
+    if (!single) for (const Lm of VIEW.lims || []) rows.push({ s: VIEW.series[0], color: Lm.color, shape: "square", name: `${Lm.name} (limit)`, val: cfg.cursor && !isTot(UI.cursor) ? limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)) : undefined });
     for (const r of rows){
       if (ly + rowH > bottom) break;
       if (r.color) drawMarker(c, r.shape, lx + 5*sc, ly + rowH/2, (r.bold ? 5.2 : 4.6)*sc, K.bg, r.color, (r.bold ? 2.4 : 1.7)*sc);
@@ -1775,6 +1796,7 @@ function reportCfg(over = {}){
     const nbCur = !isTot(UI.cursor) && curNb() && UI.nbf && VIEW.series[0] && VIEW.series[0].nb;   // cursor on the narrowband: show that line's value, as on the chart
     singleRows = Object.keys(n0.d.m).map(m => { const wd = !!n0.d.w[m]; const k = isTot(UI.cursor) ? (wd ? UI.cursor : "raw") : (wd ? UI.W : "raw"); return { name: mLabel(m, k, wd), val: isTot(UI.cursor) ? esum(dispVals(n0.d, m, k)) : (nbCur && m === UI.metric ? nbVal(VIEW.series[0], UI.nbf) : j >= 0 ? dispVals(n0.d, m, k)[j] : null), hl: m === UI.metric }; });
     const bgS = VIEW.series.find(s => s.bg); if (bgS) singleRows.push({ name: `${bgS.name} (background)`, val: valAt(bgS), s: bgS, color: REPORT_COLORS.muted, shape: "diamond" });
+    for (const Lm of VIEW.lims || []) singleRows.push({ name: `${Lm.name} (limit)`, val: isTot(UI.cursor) ? undefined : limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)), s: VIEW.series[0], color: Lm.color, shape: "square" });
     if (VIEW.hasW){ const eqM = Object.keys(n0.d.m).find(m => /eq/i.test(m)) || UI.metric; singleRows.push({ name: " ", val: undefined }); TOTKEYS.forEach(k => singleRows.push({ name: `${mLabel(eqM, k, 1)} total`, val: esum(bandVals(n0.d, eqM, k)) })); }
   }
   const src = [...new Set(VIEW.ms.map(n => n.d.src).filter(Boolean))].join(", ");
@@ -1802,7 +1824,7 @@ function reportDialog(){
     <div class="hint">Move the cursor on the spectrum (band or A/C/Z total) before opening this, and hide rows in the measurement list to leave them out.</div>`;
   // batch: one image per measurement of this folder, with the look of the open one
   const bctx = viewCtx(); const bfid = bctx ? (bctx.folder || vsKeyOf(bctx)) : null;
-  const bids = bfid && N(bfid) ? measUnder(bfid).filter(i => N(i).d.kind !== "ae") : [];
+  const bids = bfid && N(bfid) ? measUnder(bfid).filter(i => !["ae", "rt", "limit"].includes(N(i).d.kind)) : [];
   if (bids.length > 1){
     b.querySelector(".opts").insertAdjacentHTML("beforeend", `<div class="batch" style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:8px;border-top:1px solid var(--line)">
       <label><input type="checkbox" id="rAll" ${st.all ? "checked" : ""}> <b>Save all ${bids.length} measurements of “${esc(N(bfid).name)}”</b> with this appearance (one PNG each)</label>
@@ -3071,6 +3093,154 @@ function rtImageDialog(ids){
   (document.fonts?.ready || Promise.resolve()).then(build); build();
 }
 
+/* ---------- client limit curves (1/3 octave, 1/1 octave or narrowband points) ---------- */
+const LIM_COL = ["#c8322b", "#d9730d", "#7a3fb0", "#0f8a7a"];
+const LIM_Q = { sound: "Sound pressure", vel: "Vibration velocity", accel: "Vibration acceleration", other: "Other (dB as given)" };
+const LIM_UNITS = {   // how the client gives the values: dB with a reference, or linear (SI factor)
+  sound: [["db:2e-5", "dB re 20 µPa"], ["db:1e-6", "dB re 1 µPa"], ["lin:1", "Pa"]],
+  vel: [["db:1e-9", "dB re 1 nm/s"], ["db:5e-8", "dB re 5·10⁻⁸ m/s"], ["lin:1e-3", "mm/s"], ["lin:1", "m/s"]],
+  accel: [["db:1e-6", "dB re 1 µm/s²"], ["db:1e-5", "dB re 10 µm/s²"], ["lin:1e-3", "mm/s²"], ["lin:1", "m/s²"], ["lin:9.80665", "g"]],
+  other: [["db:1", "dB"]] };
+const LIM_SPAN = { "1/3": "1/3 octave bands", "1/1": "1/1 octave bands", nb: "Narrowband / frequency points" };
+/* numbers from the clipboard: Excel columns or rows, decimal comma or point */
+function parseNums(txt){
+  const rows = String(txt || "").replace(/\r/g, "").split("\n").map(l => l.trim()).filter(Boolean)
+    .map(l => l.split(/\t|;|\s{2,}|,\s+|\s+(?=[-+]?\d)/).map(t => t.trim()).filter(Boolean).map(t => parseFloat(/^[-+]?\d+,\d+(e[-+]?\d+)?$/i.test(t) ? t.replace(",", ".") : t.replace(/,/g, ""))).filter(isFinite));
+  const nonEmpty = rows.filter(r => r.length);
+  if (nonEmpty.length && nonEmpty.every(r => r.length === 2)) return { pairs: nonEmpty };                       // two columns: frequency, value
+  if (nonEmpty.length === 2 && nonEmpty[0].length > 2 && nonEmpty[0].length === nonEmpty[1].length) return { pairs: nonEmpty[0].map((f, i) => [f, nonEmpty[1][i]]) };   // two rows
+  return { vals: nonEmpty.flat() };
+}
+const bandList = (span, a, b) => { const st = span === "1/1" ? 3 : 1; const out = []; for (let n = -30; n <= 15; n += st){ const f = nominal(n); if (f >= a*0.98 && f <= b*1.02) out.push(f); } return out; };
+const snapBand = (f, span) => { const st = span === "1/1" ? 3 : 1; let best = null, bd = Infinity; for (let n = -30; n <= 15; n += st){ const g = nominal(n), d = Math.abs(Math.log(f/g)); if (d < bd){ bd = d; best = g; } } return bd < Math.log(Math.pow(10, st/20)) ? best : null; };
+/* the limit, from the dialog fields: frequencies and dB re the unit's reference */
+function limitFromInput(o){
+  const P = parseNums(o.text); let f = [], x = [];
+  if (P.pairs){ f = P.pairs.map(r => r[0]); x = P.pairs.map(r => r[1]); }
+  else if (o.span === "nb"){ x = P.vals; f = x.map((_, i) => o.f0 + i*o.df); }
+  else { f = bandList(o.span, o.fa, o.fb); x = P.vals.slice(0, f.length); f = f.slice(0, x.length); }
+  if (o.span !== "nb") f = f.map(v => snapBand(v, o.span));
+  const keep = f.map((v, i) => v != null && isFinite(v) && v > 0 && isFinite(x[i]) && (!o.unit.startsWith("lin") || x[i] > 0));
+  const [kind, k] = o.unit.split(":"); const kk = +k;
+  const ref = kind === "db" ? kk : (o.q === "sound" ? 2e-5 : o.q === "vel" ? 1e-9 : o.q === "accel" ? 1e-6 : 1);
+  f = f.filter((_, i) => keep[i]); x = x.filter((_, i) => keep[i]);
+  const v = x.map(y => kind === "db" ? y : 20*Math.log10(y*kk/ref));
+  const ord = f.map((_, i) => i).sort((a, b) => f[a] - f[b]);
+  return { f: ord.map(i => f[i]), v: ord.map(i => Math.round(v[i]*100)/100), ref, given: P.pairs ? P.pairs.length : P.vals.length };
+}
+function limitDialog(dest, editId){
+  const old = editId ? N(editId).d : null; const inp = old ? old.input : (UI.lastLim || {});
+  const st = { name: editId ? N(editId).name : "", q: old ? old.q : inp.q || "vel", unit: inp.unit || null, span: old ? old.span : inp.span || "1/3", fa: inp.fa || 1, fb: inp.fb || 80, f0: inp.f0 ?? 1, df: inp.df || 0.125, text: old ? inp.text || "" : "" };
+  const b = document.createElement("div"); b.style.display = "contents";
+  const fo = sel => NOMS.concat([1, 1.25, 1.6, 2, 2.5, 3.15, 4, 5, 6.3, 8]).filter((v, i, a) => a.indexOf(v) === i).sort((x, y) => x - y).map(f => `<option value="${f}" ${Math.abs(f - sel) < 1e-6 ? "selected" : ""}>${fLabHz(f)}</option>`).join("");
+  b.innerHTML = `<div class="proc flat"><div class="grid">
+      <label for="lName">Name <input type="text" id="lName" style="width:260px;font-family:var(--f-sans)" placeholder="e.g. Client spec · cabins" value="${esc(st.name)}"></label>
+      <label for="lQ">Quantity <select id="lQ">${Object.entries(LIM_Q).map(([k, l]) => `<option value="${k}" ${k === st.q ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label for="lU">Values in <select id="lU"></select></label>
+    </div><div class="grid">
+      <label for="lSpan">Span <select id="lSpan">${Object.entries(LIM_SPAN).map(([k, l]) => `<option value="${k}" ${k === st.span ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label for="lFa" class="lb">From <select id="lFa">${fo(st.fa)}</select> to <select id="lFb" aria-label="Last band">${fo(st.fb)}</select></label>
+      <label for="lF0" class="ln">First frequency [Hz] <input type="number" id="lF0" step="any" value="${st.f0}"></label>
+      <label for="lDf" class="ln">Δf [Hz] <input type="number" id="lDf" step="any" min="0" value="${st.df}"></label>
+    </div><div class="hint">Paste the values copied from Excel (a column or a row). With two columns (frequency and value) the frequencies are taken from the data and the range above is ignored. Decimal comma or point.</div></div>
+    <textarea id="lTxt" rows="7" style="width:100%;font-family:var(--f-mono);font-size:12.5px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--panel)" placeholder="Paste here (Ctrl+V)">${esc(st.text)}</textarea>
+    <div id="lPrev" class="hint" style="font-family:var(--f-mono)"></div><div>Folder:</div>`;
+  const fp = folderPicker(editId ? N(editId).parent : dest); if (editId) fp.style.display = "none"; b.append(fp);
+  const g = id => b.querySelector("#" + id);
+  const fillU = () => { const q = g("lQ").value; const us = LIM_UNITS[q]; const cur = g("lU").value || st.unit; g("lU").innerHTML = us.map(([k, l]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${l}</option>`).join(""); };
+  const read = () => ({ q: g("lQ").value, unit: g("lU").value, span: g("lSpan").value, fa: +g("lFa").value, fb: +g("lFb").value, f0: parseFloat(g("lF0").value) || 0, df: parseFloat(g("lDf").value) || 1, text: g("lTxt").value });
+  const prev = () => {
+    const o = read(); const nb = o.span === "nb";
+    b.querySelectorAll(".lb").forEach(x => x.style.display = nb ? "none" : ""); b.querySelectorAll(".ln").forEach(x => x.style.display = nb ? "" : "none");
+    const P = parseNums(o.text); const r = limitFromInput(o);
+    const need = nb || P.pairs ? null : bandList(o.span, o.fa, o.fb).length;
+    let msg = !o.text.trim() ? "Nothing pasted yet." : `${r.given} value${r.given === 1 ? "" : "s"} read${P.pairs ? " (frequency + value pairs)" : ""} → ${r.f.length} point${r.f.length === 1 ? "" : "s"}`;
+    if (need != null && o.text.trim()) msg += need === r.given ? ` · matches the ${need} bands ${fLabHz(o.fa)}–${fLabHz(o.fb)}` : ` · <span class="warn">the range ${fLabHz(o.fa)}–${fLabHz(o.fb)} has ${need} bands</span>`;
+    if (r.f.length) msg += `<br>${r.f.slice(0, 6).map((f, i) => `${fLab(f)} Hz: ${r.v[i].toFixed(1)}`).join(" · ")}${r.f.length > 6 ? ` … ${fLab(r.f.at(-1))} Hz: ${r.v.at(-1).toFixed(1)}` : ""} <span style="opacity:.8">(${o.q === "other" ? "dB" : refLabel(o.q, r.ref)})</span>`;
+    g("lPrev").innerHTML = msg;
+  };
+  g("lQ").onchange = () => { fillU(); prev(); }; fillU();
+  b.addEventListener("input", prev); b.addEventListener("change", prev); prev();
+  modal(editId ? "Edit limit curve" : "New limit curve", b, [
+    { label: "Cancel" },
+    { label: editId ? "Save" : "Create", primary: true, run: () => {
+      const o = read(); const r = limitFromInput(o);
+      if (r.f.length < 1){ toast("No values read: paste the limit values first"); return false; }
+      const name = g("lName").value.trim() || `Limit ${LIM_Q[o.q].toLowerCase()}`;
+      UI.lastLim = { q: o.q, unit: o.unit, span: o.span, fa: o.fa, fb: o.fb, f0: o.f0, df: o.df };
+      const d = { kind: "limit", span: o.span, q: o.q, ref: r.ref, f: r.f, v: r.v, input: { ...o }, start: "", src: "limit curve" };
+      let id = editId;
+      commit(() => { if (editId){ N(editId).name = name; N(editId).d = d; } else { id = addMeas(name, d, fp.value); N(fp.value).open = true; } });
+      UI.sel = new Set([id]); UI.active = id; renderTree(); renderView(); toast(editId ? "Limit curve saved" : "Limit curve created");
+    } }
+  ], true);
+  setTimeout(() => g("lTxt").focus(), 50);
+}
+/* value of a limit at frequency f, in dB re the reference of the view (same quantity as shown) */
+function limDispQ(){ const n0 = VIEW && VIEW.ms[0]; if (!n0) return "sound"; const q0 = qOf(n0.d, UI.metric) || "sound"; return UI.qty === "vel" && q0 === "accel" ? "vel" : UI.qty === "acc" && q0 === "vel" ? "accel" : q0; }
+function limRaw(d, f){
+  if (!d.f.length) return null;
+  if (d.span !== "nb"){ const e = Math.pow(10, (d.span === "1/1" ? 3 : 1)/20); for (let i = 0; i < d.f.length; i++){ const c = exactF(d.f[i]); if (f >= c/e*0.999 && f < c*e*1.001) return d.v[i]; } return null; }
+  if (f < d.f[0]*0.9999 || f > d.f.at(-1)*1.0001) return null; if (d.f.length === 1) return d.v[0];
+  let i = 1; while (i < d.f.length - 1 && d.f[i] < f) i++; const a = d.f[i - 1], b = d.f[i]; const u = (Math.log(f) - Math.log(a))/(Math.log(b) - Math.log(a) || 1);
+  return d.v[i - 1] + (d.v[i] - d.v[i - 1])*Math.max(0, Math.min(1, u));
+}
+function limView(d, f){
+  let v = limRaw(d, f); if (v == null) return null; if (d.q === "other") return v;
+  const qd = limDispQ(); let lin = d.ref*Math.pow(10, v/20);   // SI value of the limit
+  if (d.q === "accel" && qd === "vel") lin /= 2*Math.PI*f; else if (d.q === "vel" && qd === "accel") lin *= 2*Math.PI*f; else if (d.q !== qd) return null;
+  const s0 = VIEW.series[0]; const refSI = qd === "vel" ? (s0 && s0.lk || 1e-6)/1000 : (s0 && s0.lk) || (qd === "sound" ? 2e-5 : 1e-6);
+  return 20*Math.log10(lin/refSI);
+}
+const viewLims = () => (VIEW && UI.lims || []).filter(id => N(id) && N(id).d.kind === "limit").map((id, i) => ({ id, d: N(id).d, name: N(id).name, color: LIM_COL[i % LIM_COL.length] }));
+/* the lowest selected limit at each band of the view: used to flag exceedances */
+function limAtBand(f){ let m = null; for (const L of VIEW.lims || []){ const v = limView(L.d, exactF(f)); if (v != null && (m == null || v < m)) m = v; } return m; }
+function limitsMenuHtml(){
+  const all = Object.values(S.nodes).filter(n => n.t === "m" && n.d.kind === "limit"); const sel = new Set(UI.lims || []);
+  const on = all.filter(n => sel.has(n.id)).length;
+  return `<details class="ddl" id="cLim"><summary>Limits${on ? ` <b>(${on})</b>` : ""}</summary><div class="ddl-p">${all.length ? all.map(n => `<label><input type="checkbox" data-l="${n.id}" ${sel.has(n.id) ? "checked" : ""}> ${esc(n.name)} <span class="hint">${esc(pathOf(n.parent).join(" / "))} · ${LIM_SPAN[n.d.span]}</span></label>`).join("") : `<span class="hint">No limit curves yet: right-click a folder → New limit curve…</span>`}<button class="btn" id="cLimNew" style="margin-top:6px">New limit curve…</button></div></details>`;
+}
+function bindLimitsMenu(){
+  const el = $("#cLim"); if (!el) return;
+  el.querySelectorAll("input[data-l]").forEach(cb => cb.onchange = () => { const s = new Set(UI.lims || []); cb.checked ? s.add(cb.dataset.l) : s.delete(cb.dataset.l); UI.lims = [...s]; UI.yMin = UI.yMax = null; UI.limOpen = true; renderView(); });
+  el.ontoggle = () => { UI.limOpen = el.open; }; if (UI.limOpen) el.open = true;
+  $("#cLimNew").onclick = () => limitDialog(currentFolder());
+}
+/* draw the limits in the band area of the spectrum */
+function drawLimits(c, K, G){
+  const { xF, y, T, sc, Z0, Z1, lk } = G;
+  (VIEW.lims || []).forEach((L, li) => {
+    const d = L.d; c.strokeStyle = L.color; c.lineWidth = 2.4*sc; c.setLineDash(li ? [7*sc, 3*sc] : []); c.lineJoin = "round"; c.beginPath(); let pen = false, lx = null, ly = null;
+    if (d.span !== "nb"){ const e = Math.pow(10, (d.span === "1/1" ? 3 : 1)/20); let prevHi = null;
+      d.f.forEach(f0 => { const fc = exactF(f0), a = fc/e, b = fc*e; const v = limView(d, fc); if (v == null){ pen = false; return; } const yy = y(T(v)); const xa = xF(a), xb = xF(b);
+        if (pen && prevHi != null && Math.abs(prevHi - a)/a < 0.01) c.lineTo(xa, yy); else c.moveTo(xa, yy); c.lineTo(xb, yy); pen = true; prevHi = b; lx = xb; ly = yy; });
+    } else {
+      const fa = Math.max(d.f[0], Z0), fb = Math.min(d.f.at(-1), Z1); if (fb > fa){ const N0 = 400; for (let k = 0; k <= N0; k++){ const f = fa*Math.pow(fb/fa, k/N0); const v = limView(d, f); if (v == null){ pen = false; continue; } const xx = xF(f), yy = y(T(v)); pen ? c.lineTo(xx, yy) : c.moveTo(xx, yy); pen = true; lx = xx; ly = yy; } }
+    }
+    c.stroke(); c.setLineDash([]);
+    if (lx != null){ c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillStyle = L.color; c.textAlign = "right"; c.textBaseline = "bottom"; c.fillText(L.name, Math.min(lx, G.L + G.BW) - 3*sc, ly - 3*sc); }
+  });
+}
+function renderLimit(n){
+  const v = $("#view"); const d = n.d; const inp = d.input || {};
+  const uLab = (LIM_UNITS[d.q] || []).find(u => u[0] === inp.unit); const refTxt = d.q === "other" ? "dB" : refLabel(d.q, d.ref); const unitTxt = uLab ? uLab[1] : refTxt;
+  const lin = inp.unit && inp.unit.startsWith("lin"); const kk = lin ? +inp.unit.split(":")[1] : 1;
+  const given = d.v.map(x => lin ? d.ref*Math.pow(10, x/20)/kk : x);
+  v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(["FILES", ...pathOf(n.parent)].join(" \\ "))} · limit curve</div><h2>${esc(n.name)}</h2></div></div>
+    <div class="info"><div><span>Quantity</span><b>${esc(LIM_Q[d.q])}</b></div><div><span>Span</span><b>${esc(LIM_SPAN[d.span])}</b></div><div><span>Values in</span><b>${esc(unitTxt)}</b></div><div><span>Points</span><b>${d.f.length} · ${fLabHz(d.f[0])}–${fLabHz(d.f.at(-1))}</b></div></div>
+    <div class="ctrls"><span class="hint">To draw it over spectra: open a measurement or folder → <b>Limits</b> and tick it.</span><span class="sp" style="display:flex;gap:6px"><button class="btn primary" id="limEdit">Edit…</button><button class="btn" id="limCopy">Copy table</button></span></div>
+    <div class="aebox wide"><canvas id="limC" aria-label="Limit curve"></canvas></div>
+    <div class="tblwrap"><table class="bands" id="limT"><thead><tr><th class="rh">Frequency [Hz]</th>${d.f.map(f => `<th>${fLab(f)}</th>`).join("")}</tr></thead><tbody>
+      <tr><th class="rh">${esc(unitTxt)}</th>${given.map(x => `<td>${lin ? fmtLin(x) : x.toFixed(1)}</td>`).join("")}</tr>
+      ${lin ? `<tr><th class="rh">${esc(refTxt)}</th>${d.v.map(x => `<td>${x.toFixed(1)}</td>`).join("")}</tr>` : ""}</tbody></table></div>`;
+  $("#limEdit").onclick = () => limitDialog(n.parent, n.id);
+  $("#limCopy").onclick = () => { const t = $("#limT"); const txt = [...t.rows].map(rw => [...rw.cells].map(c => c.textContent.trim()).join("\t")).join("\n"); try { navigator.clipboard.writeText(txt).then(() => toast("Table copied"), () => toast("Select the table and copy with Ctrl+C")); } catch(e){ toast("Select the table and copy with Ctrl+C"); } };
+  const draw = () => { const g = canvasInto("limC"); if (!g) return; const K = screenColors();
+    drawBandChart(g.c, 0, 0, g.W, g.H, K, { f: d.f, series: [{ name: n.name, vals: given, color: LIM_COL[0], lw: 2.4, shape: d.f.length <= 40 ? "circle" : null, ms: 3.4 }], yLab: unitTxt, xLab: d.span === "nb" ? "Frequency [Hz] (points)" : `Frequency, ${d.span} octave band [Hz]`, head: { title: n.name, result: "" }, legendPos: "none" }); };
+  draw(); LIMDRAW = draw;
+}
+let LIMDRAW = null;
+
 /* ---------- toast ---------- */
 let toastT;
 function toast(msg, act, fn){
@@ -3178,7 +3348,7 @@ $("#fUnv").onchange = e => { const fs = [...e.target.files]; if (fs.length) reli
     sp.addEventListener("pointermove", mv); sp.addEventListener("pointerup", up); });
 })();
 
-new ResizeObserver(() => { drawChart(); drawTime(); drawAe(); if (AESUM) AESUM(); drawRt(); if (RTSUM) RTSUM(); }).observe(document.body);
+new ResizeObserver(() => { drawChart(); drawTime(); drawAe(); if (AESUM) AESUM(); drawRt(); if (RTSUM) RTSUM(); if (LIMDRAW) LIMDRAW(); }).observe(document.body);
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => renderView());
 new MutationObserver(() => renderView()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 document.fonts?.ready?.then(() => drawChart());
