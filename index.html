@@ -139,6 +139,7 @@ table.bands .cur{background:color-mix(in srgb,var(--cursor) 14%,transparent);col
 table.list{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
 table.list th{text-align:left;font-weight:500;color:var(--muted);font-size:11.5px;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 table.list td{padding:4px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.list td.nd,table.list th.nd{text-align:right;font-family:var(--f-mono);white-space:nowrap}
 table.list td.n{font-family:var(--f-mono);text-align:right}
 table.list td.t{font-family:var(--f-mono)}
 table.list th.n{text-align:right}
@@ -240,7 +241,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 <script>if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.3 · 17 Nov 2026">v1.3</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.4 · 17 Nov 2026">v1.4</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -588,7 +589,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "1.3";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "1.4";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -953,7 +954,8 @@ function menuFor(id, x, y){
   if (ids.length > 1){
     const nm = ids.filter(i => N(i).t === "m").length;
     return openMenu(x, y, [
-      ...(nm > 1 ? [{ label: `Compare ${nm} measurements`, run: () => { UI.active = id; renderView(); } }] : []),
+      ...(nm > 1 ? [{ label: `Compare ${nm} measurements`, run: () => { UI.active = id; renderView(); UI.grp = "meas"; renderView(); } }] : []),
+      ...(ids.filter(i => N(i).t === "f").length > 1 ? [{ label: "Compare folder means", run: () => { UI.active = id; renderView(); UI.grp = "folders"; renderView(); } }] : []),
       { label: "Report image…", run: () => { UI.active = id; renderView(); reportDialog(); } },
       { label: "Group into new folder", run: () => groupInFolder(ids) },
       { label: "Move to…", run: () => moveDialog(ids) },
@@ -974,6 +976,7 @@ function menuFor(id, x, y){
       { label: "Move to…", run: () => moveDialog([id]) },
       { label: "Cut", k: "Ctrl+X", run: () => cut([id]) },
       { label: "Duplicate", run: () => duplicate([id]) },
+      ...(n.kids.filter(k => N(k).t === "f").length ? [{ label: "Compare subfolder means", run: () => { UI.sel = new Set([id]); UI.active = id; renderView(); UI.grp = "folders"; renderView(); } }] : []),
       { label: "Sort by name", run: () => sortFolder(id, "name") },
       { label: "Sort by time", run: () => sortFolder(id, "time") },
       { label: "Report image…", run: () => { renderView(); reportDialog(); } },
@@ -1136,6 +1139,7 @@ function exportXlsx(ids){
 
 /* ---------- viewer model ---------- */
 let VIEW = null;
+const serColor = (K, s) => s.bg ? K.muted : K.pal[s.ci % K.pal.length];
 const cssPalette = () => { const cs = getComputedStyle(document.documentElement); return [1,2,3,4,5,6,7,8,9,10].map(i => cs.getPropertyValue("--s" + i).trim()); };
 function viewCtx(){
   const c = viewCtx0(); if (!c) return c;
@@ -1147,16 +1151,18 @@ function viewCtx(){
 function viewCtx0(){
   const sel = [...UI.sel].filter(id => N(id));
   if (sel.length > 1){
-    const ms = [...new Set(topLevel(sel).flatMap(measUnder))];
-    if (ms.length) return { kind: ms.length > 1 ? "multi" : "single", ids: ms, title: null, crumb: "Selection" };
+    const top = topLevel(sel); const ms = [...new Set(top.flatMap(measUnder))];
+    const gsrc = top.some(id => N(id).t === "f") ? top : null;   // folders in the selection: they can be compared by their means
+    if (ms.length) return { kind: ms.length > 1 ? "multi" : "single", ids: ms, title: null, crumb: "Selection", gsrc };
   }
   const a = UI.active && N(UI.active); if (!a) return null;
   if (a.t === "m") return { kind: "single", ids: [a.id], title: a.name, crumb: ["FILES", ...pathOf(a.parent)].join(" \\ ") };
   const ms = measUnder(a.id);
-  return { kind: ms.length === 1 ? "single" : "multi", ids: ms, title: a.name, crumb: ["FILES", ...pathOf(a.id)].slice(0, -1).join(" \\ "), folder: a.id };
+  const gsrc = a.kids.some(k => N(k).t === "f" && measUnder(k).length) ? a.kids.filter(k => N(k).t === "f" ? measUnder(k).length : true) : null;   // subfolders: compare their means
+  return { kind: ms.length === 1 ? "single" : "multi", ids: ms, title: a.name, crumb: ["FILES", ...pathOf(a.id)].slice(0, -1).join(" \\ "), folder: a.id, gsrc };
 }
 /* each folder (or single measurement) keeps its own display settings; they travel with the project */
-const VS_KEYS = ["metric", "W", "b0", "b1", "yMin", "yMax", "yscale", "mode", "curOn", "qty", "showMean", "fz", "cursor", "nbf", "hw"];
+const VS_KEYS = ["metric", "W", "b0", "b1", "yMin", "yMax", "yscale", "mode", "curOn", "qty", "showMean", "fz", "cursor", "nbf", "hw", "grp", "bgId", "meanOnly"];
 const LASTVS = new Map(); let vsTimer = null;
 function vsKeyOf(ctx){ if (!ctx) return null; if (ctx.folder) return ctx.folder; return ctx.kind === "single" && ctx.ids.length === 1 && !(ctx.aes && ctx.aes.length) && N(ctx.ids[0]) ? N(ctx.ids[0]).parent : null; }   // measurements use their folder's settings
 function loadVS(key){
@@ -1174,7 +1180,7 @@ function saveVS(){
 }
 function buildView(){
   const ctx = viewCtx();
-  const vkey = vsKeyOf(ctx); if (vkey !== UI.vkey){ UI.vkey = vkey; loadVS(vkey); }
+  const vkey = vsKeyOf(ctx); if (vkey !== UI.vkey){ UI.vkey = vkey; loadVS(vkey); if (!vkey && ctx && ctx.gsrc && ctx.gsrc.every(id => N(id).t === "f")) UI.grp = "folders"; }   // a selection of folders opens as folder means
   if (!ctx || !ctx.ids.length) return ctx ? { ...ctx, empty: true } : null;
   const ms = ctx.ids.map(N);
   const metrics = [...new Set(ms.flatMap(n => Object.keys(n.d.m)))];
@@ -1196,22 +1202,41 @@ function buildView(){
   const bk = bandKind(freqs);
   const U = uniqueLabels(ctx.ids);
   const pal = cssPalette();
-  const series = ms.map((n, i) => {
+  const mkSer = (n, i) => {
     const raw = dispVals(n.d, UI.metric, UI.W) || []; const qc = qConv(n.d, UI.metric);
     const vals = freqs.map(f => { const j = n.d.f.indexOf(f); return j >= 0 ? raw[j] ?? null : null; });
     const tot = {}; for (const k of totKeys) tot[k] = esum(dispVals(n.d, UI.metric, n.d.w[UI.metric] ? k : "raw"));
     const hasNb = n.d.nb && n.d.m[UI.metric];
     return { id: n.id, name: ctx.kind === "single" ? n.name : U.labels[n.id], ci: i, color: pal[i % pal.length], shape: SHAPES[i % SHAPES.length], vals, tot, hidden: UI.hidden.has(n.id),
       nb: hasNb ? getNb(n.d.nb.ref) : null, nbdf: hasNb ? n.d.nb.df : 0, wfrom: n.d.w[UI.metric] || null, qoff: qc ? qc.off : null, lk: linInfo(n.d, UI.metric).k, lu: n.d.m[UI.metric] ? linInfo(n.d, UI.metric).u : null };
-  });
-  let title = ctx.title, crumb = ctx.crumb;
+  };
+  // compare folders by their energetic means: one curve per folder (or loose measurement)
+  let groups = null;
+  if (ctx.kind === "multi" && ctx.gsrc && UI.grp === "folders"){
+    groups = []; const loose = [];
+    for (const id of ctx.gsrc){ if (N(id).t === "f") groups.push({ id, ms: measUnder(id).filter(m => ctx.ids.includes(m)) }); else if (ctx.ids.includes(id)) loose.push(id); }
+    if (loose.length){ if (ctx.folder) groups.push({ id: ctx.folder, ms: loose, loose: true }); else loose.forEach(id => groups.push({ id, ms: [id] })); }   // measurements lying in the folder itself: one more group
+    groups = groups.filter(g => g.ms.length);
+  }
+  let series;
+  if (groups && groups.length > 1){
+    const gl = uniqueGroupLabels(groups.map(g => g.id));
+    series = groups.map((g, i) => {
+      const mem = g.ms.map((id, k) => mkSer(N(id), k));
+      if (mem.length === 1 && N(g.id).t !== "f") return { ...mem[0], ci: i, color: pal[i % pal.length], shape: SHAPES[i % SHAPES.length], hidden: UI.hidden.has(g.id) };
+      const a = aggSeries(mem); return { ...a, id: g.id, name: g.loose ? `${N(g.id).name} · loose measurements` : gl[g.id], group: true, nMeas: mem.length, ci: i, color: pal[i % pal.length], shape: SHAPES[i % SHAPES.length], hidden: UI.hidden.has(g.id) };
+    });
+  } else series = ms.map(mkSer);
+  for (const s of series){ if (s.id === UI.bgId){ s.bg = true; s.color = "var(--muted)"; } }
+  let title = ctx.title, crumb = ctx.crumb; const grouped = !!(groups && groups.length > 1);
+  if (grouped && !title) title = `${series.length} folders · energetic means`;
   if (!title) title = U.sameName ? U.sameName : `${ms.length} measurements selected`;
   if (ctx.crumb === "Selection") crumb = U.sameName ? `Selection · ${ms.length} measurements named “${U.sameName}”` : "Selection comparison";
   const refs = [...new Set(ms.filter(n => n.d.m[UI.metric]).map(n => (qConv(n.d, UI.metric) || {}).ref || n.d.ref || "dB"))];
   const qmap = {}; for (const n of ms) for (const m of Object.keys(n.d.m)){ const qc = qConv(n.d, m); if (qc) qmap[m] = qc.lab; }
   const lus = [...new Set(series.map(s => s.lu).filter(Boolean))];
-  const V = { ...ctx, qmap, linUnit: lus.length === 1 ? lus[0] : null, anyVib: ms.some(n => Object.keys(n.d.m).some(m => { const q = qOf(n.d, m); return q === "accel" || q === "vel"; })), yLab: refs.length === 1 ? refs[0] : "dB", anyNb: series.some(s => s.nb), title, crumb, ms, metrics, freqs, series, hasW, totKeys, drawKeys, metric: UI.metric, sameName: U.sameName, bk, bandAxis: `${bk} octave band [Hz]` };
-  V.mean = meanSeries(V); return V;
+  const V = { ...ctx, grouped, qmap, linUnit: lus.length === 1 ? lus[0] : null, anyVib: ms.some(n => Object.keys(n.d.m).some(m => { const q = qOf(n.d, m); return q === "accel" || q === "vel"; })), yLab: refs.length === 1 ? refs[0] : "dB", anyNb: series.some(s => s.nb), title, crumb, ms, metrics, freqs, series, hasW, totKeys, drawKeys, metric: UI.metric, sameName: U.sameName, bk, bandAxis: `${bk} octave band [Hz]` };
+  V.mean = meanSeries(V); V.meanOnly = !!(V.mean && UI.meanOnly); return V;
 }
 const viewMode = () => (VIEW && VIEW.anyNb) ? (UI.mode || "both") : "bands";
 const curNb = () => { const m = viewMode(); return m === "nb" || (m === "both" && UI.curOn === "nb"); };
@@ -1235,10 +1260,28 @@ const dv = (v, s) => yLin() ? fmtLin(v == null ? null : (s && s.lk || 1)*Math.po
 const fmtNbf = f => f >= 100 ? f.toFixed(1) : f.toFixed(2);
 const curLabel = () => isTot(UI.cursor) ? (UI.cursor === "raw" ? `${VIEW.metric} total` : `${mLabel(VIEW.metric, UI.cursor, VIEW.hasW)} total`) : (curNb() && UI.nbf ? `${fmtNbf(UI.nbf)} Hz` : fLabHz(UI.cursor));
 function nbVal(s, f){ if (!s || !s.nb) return null; const k = Math.round(f/s.nbdf); if (k < 1 || k >= s.nb.length) return null; let v = s.nb[k]; if (!isFinite(v)) return null; const W = UI.W; if (s.wfrom && W !== "raw" && W !== s.wfrom) v = v - wgtF(s.wfrom, f) + wgtF(W, f); if (s.qoff) v += s.qoff(f); return v; }
+/* energetic mean of a group of series (all members, hidden or not) */
+function aggSeries(mem){
+  const em = arr => { let s = 0, n = 0; for (const v of arr){ if (v == null) continue; s += Math.pow(10, v/10); n++; } return n ? 10*Math.log10(s/n) : null; };
+  const vals = mem[0].vals.map((_, i) => em(mem.map(s => s.vals[i])));
+  const tot = {}; for (const k of Object.keys(mem[0].tot)) tot[k] = em(mem.map(s => s.tot[k]));
+  let nb = null, nbdf = 0; const wf = mem[0].wfrom;
+  if (mem.every(s => s.nb && Math.abs(s.nbdf - mem[0].nbdf) < 1e-9 && s.wfrom === wf && !!s.qoff === !!mem[0].qoff)){
+    const len = Math.min(...mem.map(s => s.nb.length)); nb = new Float32Array(len); nbdf = mem[0].nbdf;
+    for (let k = 0; k < len; k++){ let a = 0, c = 0; for (const x of mem){ const v = x.nb[k]; if (isFinite(v)){ a += Math.pow(10, v/10); c++; } } nb[k] = c ? 10*Math.log10(a/c) : NaN; }
+  }
+  return { vals, tot, nb, nbdf, wfrom: wf, qoff: mem[0].qoff, lk: mem[0].lk, lu: mem[0].lu };
+}
+function uniqueGroupLabels(ids){ const out = {}; const nm = ids.map(id => N(id).name); ids.forEach((id, i) => { out[id] = nm.filter(x => x === nm[i]).length > 1 ? (pathOf(N(id).parent).slice(-1).concat(N(id).name).join(" / ")) : nm[i]; }); return out; }
+/* curves drawn: with "only the mean", just the mean (and the background) */
+function serCountTxt(short){ const v = VIEW.series.filter(s => !s.hidden && !s.bg), u = VIEW.grouped ? "folder" : "measurement"; const bg = VIEW.series.some(s => s.bg && !s.hidden);
+  if (short) return `${v.length} ${u}${v.length === 1 ? "" : "s"}${VIEW.mean ? (VIEW.meanOnly ? " · mean only" : " + mean") : ""}${bg ? " + bg" : ""}`;
+  return VIEW.meanOnly && VIEW.mean ? `energetic mean of ${v.length} ${u}s${bg ? " + background" : ""}` : `${v.length} ${u}${v.length === 1 ? "" : "s"}${VIEW.mean ? " + energetic mean" : ""}${bg ? " + background" : ""}`; }
+const visSer = () => VIEW.series.filter(s => !s.hidden && (!VIEW.meanOnly || s.bg));
 /* energetic mean of the visible measurements: 10·log10(mean(10^(L/10))) per band, per total and per narrowband line */
 function meanSeries(V){
   if (V.kind !== "multi" || UI.showMean === false) return null;
-  const vis = V.series.filter(s => !s.hidden && s.vals.some(v => v != null)); if (vis.length < 2) return null;
+  const vis = V.series.filter(s => !s.hidden && !s.bg && s.vals.some(v => v != null)); if (vis.length < 2) return null;
   const em = arr => { let s = 0, n = 0; for (const v of arr){ if (v == null) continue; s += Math.pow(10, v/10); n++; } return n ? 10*Math.log10(s/n) : null; };
   const vals = V.freqs.map((_, i) => em(vis.map(s => s.vals[i])));
   const tot = {}; for (const k of V.totKeys) tot[k] = em(vis.map(s => s.tot[k]));
@@ -1247,7 +1290,7 @@ function meanSeries(V){
     const len = Math.min(...vis.map(s => s.nb.length)); nb = new Float32Array(len); nbdf = vis[0].nbdf;
     for (let k = 0; k < len; k++){ let a = 0; for (const x of vis) a += Math.pow(10, x.nb[k]/10); nb[k] = 10*Math.log10(a/vis.length); }
   }
-  return { id: "__mean", mean: true, name: `Energetic mean (${vis.length})`, shape: "circle", ci: -1, vals, tot, nb, nbdf, wfrom: wf, qoff: vis[0].qoff, lk: vis[0].lk, n: vis.length };
+  return { id: "__mean", mean: true, name: `Energetic mean${V.grouped ? " of folders" : ""} (${vis.length})`, shape: "circle", ci: -1, vals, tot, nb, nbdf, wfrom: wf, qoff: vis[0].qoff, lk: vis[0].lk, n: vis.length };
 }
 const curUnit = () => isTot(UI.cursor) ? unitOf(UI.cursor) : unitOf(UI.W);
 function valAt(s){ if (isTot(UI.cursor)) return s.tot[UI.cursor]; if (curNb() && UI.nbf) return nbVal(s, UI.nbf); const i = VIEW.freqs.indexOf(UI.cursor); return s.vals[i]; }
@@ -1291,17 +1334,21 @@ function renderView(){
     ${viewMode() === "both" ? `<label for="cCur">Cursor on <select id="cCur"><option value="band" ${UI.curOn !== "nb" ? "selected" : ""}>Bands</option><option value="nb" ${UI.curOn === "nb" ? "selected" : ""}>Narrowband</option></select></label>` : ""}
     ${VIEW.anyVib ? `<label for="cQty">Vibration as <select id="cQty"><option value="native" ${(UI.qty || "native") === "native" ? "selected" : ""}>As measured</option><option value="vel" ${UI.qty === "vel" ? "selected" : ""}>Velocity (integrate accel.)</option><option value="acc" ${UI.qty === "acc" ? "selected" : ""}>Acceleration (differentiate vel.)</option></select></label>
     <label title="Human response frequency weighting Wm (ISO 2631-2), as used by ISO 20283-5 for habitability on ships. Display only."><input type="checkbox" id="cHw" ${UI.hw ? "checked" : ""}> Wm weighting <span class="hint" style="margin:0">ISO 20283-5</span></label>` : ""}
-    ${VIEW.kind === "multi" ? `<label><input type="checkbox" id="cMean" ${UI.showMean !== false ? "checked" : ""}> Energetic mean</label>` : ""}
+    ${VIEW.kind === "multi" && VIEW.gsrc ? `<label>Compare <span class="seg" id="cGrp"><button data-g="meas" aria-pressed="${!VIEW.grouped}">Measurements</button><button data-g="folders" aria-pressed="${VIEW.grouped}" title="One curve per folder: the energetic mean of its measurements">Folder means</button></span></label>` : ""}
+    ${VIEW.kind === "multi" ? `<label for="cMeanM">Energetic mean <select id="cMeanM"><option value="off" ${UI.showMean === false ? "selected" : ""}>Off</option><option value="add" ${UI.showMean !== false && !UI.meanOnly ? "selected" : ""}>Added to the curves</option><option value="only" ${UI.showMean !== false && UI.meanOnly ? "selected" : ""}>Only the mean</option></select></label>
+      <label for="cBg">Background <select id="cBg"><option value="">None</option>${series.map(s => `<option value="${s.id}" ${s.bg ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>` : ""}
     <span class="sp"><button class="btn primary" id="bReport" title="Create a PNG of this spectrum for a report"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><path d="m3.5 11 3-3.5 2.5 2.5 2-2 1.5 3"/></svg>Report image</button></span>
   </div>`;
   const chart = `<div class="hint" style="margin-bottom:-8px">Mouse wheel on the chart zooms the frequency axis · <kbd>⇧</kbd> + drag pans · double-click shows all bands</div><div class="chartwrap"><div class="chartbox"><canvas id="chart" tabindex="0" aria-label="Third-octave spectrum. Click or use the arrow keys to move the cursor across bands and the A, C, Z totals."></canvas></div><div class="readout" id="readout"></div></div>`;
 
   let below = "";
   if (VIEW.kind === "multi"){
-    below = `<div class="sec-h"><h4>Measurements (${series.length})</h4><span class="hint">Click a row to hide or show it · double-click to open it</span></div>
-    <div class="tblwrap"><table class="list" id="mlist"><thead><tr><th></th><th>Measurement</th><th>Folder</th><th>Start</th>${totKeys.map(k => `<th class="n ${UI.cursor === k ? "cur" : ""}">${esc(k === "raw" ? mLabel(UI.metric, "raw", false) : mLabel(UI.metric, k, 1))}</th>`).join("")}</tr></thead><tbody>
-    ${series.map(s => { const n = N(s.id); return `<tr data-id="${s.id}" class="${s.hidden ? "off" : ""}"><td>${markerSvg(s.shape, s.color)}</td><td>${esc(n.name)}</td><td>${esc(pathOf(n.parent).join(" / "))}</td><td class="t">${fmtDate(parseStart(n.d.start))}</td>${totKeys.map(k => `<td class="n ${UI.cursor === k ? "cur" : ""}">${fmt(s.tot[k])}</td>`).join("")}</tr>`; }).join("")}
-    </tbody>${VIEW.mean ? `<tfoot><tr class="meanrow"><td>${markerSvg("circle", "var(--ink)")}</td><td colspan="3"><b>${esc(VIEW.mean.name)}</b> <span class="hint">energetic average of the visible measurements</span></td>${totKeys.map(k => `<td class="n"><b>${fmt(VIEW.mean.tot[k])}</b></td>`).join("")}</tr></tfoot>` : ""}</table></div>`;
+    const bgS = series.find(s => s.bg); const dCol = bgS && !yLin();
+    const dB = s => { if (!dCol || s.bg) return ""; const a = valAt(s), b = valAt(bgS); return a != null && b != null ? fmtD(a - b) : "—"; };
+    below = `<div class="sec-h"><h4>${VIEW.grouped ? `Folders (${series.length})` : `Measurements (${series.length})`}</h4><span class="hint">Click a row to hide or show it · double-click to open it${VIEW.grouped ? " · each folder is the energetic mean of its measurements" : ""}${VIEW.meanOnly ? " · only the mean is drawn" : ""}</span></div>
+    <div class="tblwrap"><table class="list" id="mlist"><thead><tr><th></th><th>${VIEW.grouped ? "Folder" : "Measurement"}</th><th>${VIEW.grouped ? "In" : "Folder"}</th><th>${VIEW.grouped ? "Measurements" : "Start"}</th>${totKeys.map(k => `<th class="n ${UI.cursor === k ? "cur" : ""}">${esc(k === "raw" ? mLabel(UI.metric, "raw", false) : mLabel(UI.metric, k, 1))}</th>`).join("")}${dCol ? `<th class="nd" id="dHead" title="Difference to the background at the cursor">${esc(curLabel())} − bg [dB]</th>` : ""}</tr></thead><tbody>
+    ${series.map(s => { const n = N(s.id); return `<tr data-id="${s.id}" class="${s.hidden ? "off" : ""}"><td>${markerSvg(s.shape, s.color)}</td><td>${esc(n.name)}${s.bg ? ' <span class="hint">background</span>' : ""}</td><td>${esc(pathOf(n.parent).join(" / "))}</td><td class="t">${s.group ? `${s.nMeas} (energetic mean)` : fmtDate(parseStart(n.d.start))}</td>${totKeys.map(k => `<td class="n ${UI.cursor === k ? "cur" : ""}">${fmt(s.tot[k])}</td>`).join("")}${dCol ? `<td class="nd" data-d="${s.id}">${dB(s)}</td>` : ""}</tr>`; }).join("")}
+    </tbody>${VIEW.mean ? `<tfoot><tr class="meanrow"><td>${markerSvg("circle", "var(--ink)")}</td><td colspan="3"><b>${esc(VIEW.mean.name)}</b> <span class="hint">energetic average of the visible ${VIEW.grouped ? "folders" : "measurements"}${bgS ? ", background excluded" : ""}</span></td>${totKeys.map(k => `<td class="n"><b>${fmt(VIEW.mean.tot[k])}</b></td>`).join("")}${dCol ? `<td class="nd" data-d="__mean" style="font-weight:600">${dB(VIEW.mean)}</td>` : ""}</tr></tfoot>` : ""}</table></div>`;
   }
   below += `<div class="sec-h"><h4>Band table</h4><span class="hint">${isMaxMin(UI.metric) ? "Max/min totals are the energetic sum of bands, not the broadband value measured by the instrument." : "Totals = energetic sum of all bands."}${(UI.qty && UI.qty !== "native" || UI.hw) && VIEW.anyVib ? ` Vibration ${UI.hw ? "Wm-weighted (ISO 2631-2) " : ""}${UI.qty && UI.qty !== "native" ? (UI.hw ? "and converted " : "converted ") : ""}for display: each band at its true mid-frequency, each narrowband line at its own frequency.` : ""}</span><span class="sp"><button class="btn" id="bCopy">Copy table</button><button class="btn" id="bXls">Export to Excel</button></span></div>
     <div class="tblwrap" id="btbl"></div>`;
@@ -1318,7 +1365,9 @@ function renderView(){
   if ($("#cCur")) $("#cCur").onchange = e => { UI.curOn = e.target.value; if (UI.curOn === "nb" && !isTot(UI.cursor)) UI.nbf = UI.cursor; renderReadout(); drawChart(); };
   if ($("#cQty")) $("#cQty").onchange = e => { UI.qty = e.target.value; UI.yMin = UI.yMax = null; renderView(); };
   if ($("#cHw")) $("#cHw").onchange = e => { UI.hw = e.target.checked; UI.yMin = UI.yMax = null; renderView(); };
-  if ($("#cMean")) $("#cMean").onchange = e => { UI.showMean = e.target.checked; renderView(); };
+  if ($("#cMeanM")) $("#cMeanM").onchange = e => { const v = e.target.value; UI.showMean = v !== "off"; UI.meanOnly = v === "only"; UI.yMin = UI.yMax = null; renderView(); };
+  if ($("#cGrp")) $("#cGrp").onclick = e => { const b = e.target.closest("button[data-g]"); if (!b) return; UI.grp = b.dataset.g; UI.bgId = null; UI.hidden = new Set(); UI.yMin = UI.yMax = null; renderView(); };
+  if ($("#cBg")) $("#cBg").onchange = e => { UI.bgId = e.target.value || null; UI.yMin = UI.yMax = null; renderView(); };
 
   $("#cMetric").onchange = e => { UI.metric = e.target.value; UI.yMin = UI.yMax = null; renderView(); };
   $("#cW").onclick = e => { const b = e.target.closest("button[data-w]"); if (!b || b.disabled) return; UI.W = b.dataset.w; UI.yMin = UI.yMax = null; renderView(); };
@@ -1356,7 +1405,7 @@ function renderBandTable(){
   } else {
     thead = `<tr><th class="rh">${esc(mLabel(UI.metric, UI.W, VIEW.hasW))}</th>${th}${thT}</tr>`;
     const MS = VIEW.mean;
-    for (const s of [...VIEW.series.filter(s => !s.hidden), ...(MS ? [MS] : [])]) if (!s.hidden) rows += `<tr class="${s.mean ? "meanrow" : ""}"><th class="rh" title="${esc(s.name)}">${markerSvg(s.shape, s.mean ? "var(--ink)" : s.color)}${esc(s.name)}</th>${s.vals.map((x, i) => `<td class="${fs[i] === cur ? "cur" : ""}">${fmt(x)}</td>`).join("")}${tk.map(k => `<td class="tot ${k === cur ? "cur" : ""}">${fmt(s.tot[k])}</td>`).join("")}</tr>`;
+    for (const s of [...visSer(), ...(MS ? [MS] : [])]) if (!s.hidden) rows += `<tr class="${s.mean ? "meanrow" : ""}"><th class="rh" title="${esc(s.name)}">${markerSvg(s.shape, s.mean ? "var(--ink)" : s.color)}${esc(s.name)}</th>${s.vals.map((x, i) => `<td class="${fs[i] === cur ? "cur" : ""}">${fmt(x)}</td>`).join("")}${tk.map(k => `<td class="tot ${k === cur ? "cur" : ""}">${fmt(s.tot[k])}</td>`).join("")}</tr>`;
   }
   el.innerHTML = `<table class="bands"><thead>${thead}</thead><tbody>${rows}</tbody></table>`;
   el.querySelector("thead").onclick = e => { const t = e.target.closest("th[data-c]"); if (!t) return; const c = t.dataset.c; setCursor(isNaN(+c) ? c : +c); };
@@ -1384,15 +1433,19 @@ function renderReadout(){
       h += `<tr class="${m === UI.metric ? "cur" : ""}"><td class="nm">${esc(mLabel(m, k, wd))}</td><td class="vl">${dv(val, VIEW.series[0])}</td></tr>`;
     }
   } else {
-    const vis = VIEW.series.filter(s => !s.hidden); const vs = vis.map(valAt).filter(x => x != null); const mx = vs.length ? Math.max(...vs) : null;
-    for (const s of vis){ const x = valAt(s); h += `<tr class="${x === mx && vs.length > 1 ? "max" : ""}"><td class="nm" title="${esc(s.name)}">${markerSvg(s.shape, s.color)}${esc(s.name)}</td><td class="vl">${dv(x, s)}</td></tr>`; }
-    if (VIEW.mean){ const x = valAt(VIEW.mean); h += `<tr class="mean"><td class="nm" title="${esc(VIEW.mean.name)}">${markerSvg("circle", "var(--ink)")}${esc(VIEW.mean.name)}</td><td class="vl">${dv(x, VIEW.mean)}</td></tr>`; }
+    const vis = visSer(); const vs = vis.filter(s => !s.bg).map(valAt).filter(x => x != null); const mx = vs.length ? Math.max(...vs) : null; const bgS = vis.find(s => s.bg);
+    const dBg = s => { if (!bgS || s.bg || yLin()) return ""; const a = valAt(s), b = valAt(bgS); return a != null && b != null ? `<span class="hint" title="above the background">${fmtD(a - b)}</span> ` : ""; };
+    for (const s of vis){ const x = valAt(s); h += `<tr class="${x === mx && vs.length > 1 && !s.bg ? "max" : ""}"><td class="nm" title="${esc(s.name)}">${markerSvg(s.shape, s.color)}${esc(s.name)}${s.bg ? ' <span class="hint">background</span>' : ""}</td><td class="vl">${dBg(s)}${dv(x, s)}</td></tr>`; }
+    if (VIEW.mean){ const x = valAt(VIEW.mean); h += `<tr class="mean"><td class="nm" title="${esc(VIEW.mean.name)}">${markerSvg("circle", "var(--ink)")}${esc(VIEW.mean.name)}</td><td class="vl">${dBg(VIEW.mean)}${dv(x, VIEW.mean)}</td></tr>`; }
     if (vs.length > 1) h += `<tr><td class="nm" style="color:var(--muted)">Spread max−min (dB)</td><td class="vl">${fmt(mx - Math.min(...vs))}</td></tr>`;
   }
   h += `</table><div class="hint">Values in ${esc(yLin() ? VIEW.linUnit + " RMS" : curUnit())}. ${curNb() ? "Click or drag on the narrowband to read any line; <kbd>←</kbd> <kbd>→</kbd> step one line (<kbd>⇧</kbd> ten)." : "Click or drag on the spectrum, including the Leq column at the right (it follows the A/C/Z selection). With the chart focused, <kbd>←</kbd> <kbd>→</kbd> move the cursor."}</div>`;
   el.innerHTML = h;
 }
-function setCursor(c, keepNb){ if (!keepNb && !isTot(c)) UI.nbf = c; UI.cursor = c; drawChart(); renderReadout(); renderBandTable(); const ml = $("#mlist"); if (ml){ const k = VIEW.totKeys; ml.querySelectorAll("th.n,td.n").forEach(x => x.classList.remove("cur")); if (isTot(c)){ const col = 4 + k.indexOf(c); ml.querySelectorAll(`thead tr > :nth-child(${col + 1}), tbody tr > :nth-child(${col + 1})`).forEach(x => x.classList.add("cur")); } } }
+function updDelta(){ const h = $("#dHead"); if (!h || !VIEW) return; const bg = VIEW.series.find(s => s.bg); if (!bg) return; h.textContent = `${curLabel()} − bg [dB]`;
+  document.querySelectorAll("td[data-d]").forEach(td => { const s = td.dataset.d === "__mean" ? VIEW.mean : VIEW.series.find(x => x.id === td.dataset.d); if (!s || s.bg) return; const a = valAt(s), b = valAt(bg); td.textContent = a != null && b != null ? fmtD(a - b) : "—"; }); }
+const fmtD = x => { const r = Math.round(x*10)/10; return (r > 0 ? "+" : r < 0 ? "−" : "") + Math.abs(r).toFixed(1); };
+function setCursor(c, keepNb){ if (!keepNb && !isTot(c)) UI.nbf = c; UI.cursor = c; drawChart(); renderReadout(); renderBandTable(); updDelta(); const ml = $("#mlist"); if (ml){ const k = VIEW.totKeys; ml.querySelectorAll("th.n,td.n").forEach(x => x.classList.remove("cur")); if (isTot(c)){ const col = 4 + k.indexOf(c); ml.querySelectorAll(`thead tr > :nth-child(${col + 1}), tbody tr > :nth-child(${col + 1})`).forEach(x => x.classList.add("cur")); } } }
 function copyBands(){
   if (!VIEW) return; const tbl = $("#btbl table"); if (!tbl) return;
   const txt = [...tbl.rows].map(r => [...r.cells].map(c => c.textContent.trim()).join("\t")).join("\n");
@@ -1412,9 +1465,9 @@ const REPORT_COLORS = { bg: "#ffffff", ink: "#16201e", muted: "#56645f", line: "
 function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   const fs = visFreqs(); const idx = fs.map(f => VIEW.freqs.indexOf(f));
   const single = VIEW.kind === "single";
-  const ser = VIEW.series.filter(s => !s.hidden);
+  const ser = visSer();
   const tk = VIEW.drawKeys;
-  const col = s => K.pal[s.ci % K.pal.length];
+  const col = s => serColor(K, s);
   const sc = o.scale || 1; const fpx = n => `${n*sc*FS}px`;
   const mode = viewMode(); const M = single ? null : VIEW.mean;
   const stp = VIEW.bk === "1/1" ? 3 : 1; const ef = Math.pow(10, stp/20);
@@ -1490,9 +1543,14 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   const mk = (s, x, yy, color, big) => drawMarker(c, s.shape, x, yy, (big ? 3.9 : 3.3)*sc, K.panel, color, (big ? 2 : 1.5)*sc);
   const inX = x => x >= L - 0.5 && x <= L + BW + 0.5;
   const stair = (s, color, lw, big) => {
+    if (s.bg){   // background: shaded area under its stairs
+      c.fillStyle = color; c.globalAlpha = .13; let open = false, xl = 0;
+      idx.forEach((i, k) => { const v = s.vals[i]; if (v == null || !inZ(k)){ if (open){ c.lineTo(xl, base); c.closePath(); c.fill(); open = false; } return; } const [x0, x1] = bx(k), yy = y(T(v, s)); if (!open){ c.beginPath(); c.moveTo(x0, base); open = true; } c.lineTo(x0, yy); c.lineTo(x1, yy); xl = x1; });
+      if (open){ c.lineTo(xl, base); c.closePath(); c.fill(); } c.globalAlpha = 1; c.setLineDash([5*sc, 3*sc]);
+    }
     c.strokeStyle = color; c.lineWidth = lw; c.lineJoin = "round"; c.beginPath(); let pen = false;
     idx.forEach((i, k) => { const v = s.vals[i]; if (v == null || !inZ(k)){ pen = false; return; } const [x0, x1] = bx(k), yy = y(T(v, s)); if (!pen){ c.moveTo(x0, yy); pen = true; } else c.lineTo(x0, yy); c.lineTo(x1, yy); });
-    c.stroke();
+    c.stroke(); c.setLineDash([]);
     idx.forEach((i, k) => { const v = s.vals[i]; const xc = xF(fs[k]); if (v == null || !inX(xc)) return; mk(s, xc, y(T(v, s)), color, big); });
   };
   const overN = {};   // values above the axis: one arrow per column, values listed under it
@@ -1563,7 +1621,7 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   }
   if (o.corner !== false){
     c.font = `${fpx(10.5)} ${K.mono}`; c.fillStyle = K.muted; c.textAlign = "right"; c.textBaseline = "middle";
-    c.fillText(single ? mLabel(UI.metric, UI.W, VIEW.hasW) : `${mLabel(UI.metric, UI.W, VIEW.hasW)} · ${ser.length} measurements${M ? " + energetic mean" : ""}`, L + pw, Tp - 12*sc);
+    c.fillText(single ? mLabel(UI.metric, UI.W, VIEW.hasW) : `${mLabel(UI.metric, UI.W, VIEW.hasW)} · ${serCountTxt(true)}`, L + pw, Tp - 12*sc);
   }
   c.restore();
   return { L, BW, pw, tslot, gapP, tk, fs, Tp, ph, mode, xF, fX, Z0, Z1, FA, FB, ef, lo, hi };
@@ -1668,7 +1726,7 @@ function renderReport(cfg){
     c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillText(cfg.legendHead.toUpperCase(), lx, ly + 6*sc); ly += 18*sc;
     c.fillStyle = K.cur; c.font = `500 ${15*sc*FS}px ${K.mono}`; c.fillText(cfg.legendSub, lx, ly + 6*sc); ly += 24*sc;
     const rowH = 21*sc; const vw = 62*sc;
-    const rows = single ? cfg.singleRows : VIEW.series.filter(s => !s.hidden).map(s => ({ s, color: K.pal[s.ci % K.pal.length], shape: s.shape, name: s.name, val: cfg.cursor ? valAt(s) : s.tot[VIEW.drawKeys[0]] }));
+    const rows = single ? cfg.singleRows : visSer().map(s => ({ s, color: serColor(K, s), shape: s.shape, name: s.name, val: cfg.cursor ? valAt(s) : s.tot[VIEW.drawKeys[0]] }));
     if (!single && VIEW.mean) rows.push({ s: VIEW.mean, color: K.ink, shape: "circle", name: VIEW.mean.name, val: cfg.cursor ? valAt(VIEW.mean) : VIEW.mean.tot[VIEW.drawKeys[0]], bold: true });
     for (const r of rows){
       if (ly + rowH > bottom) break;
@@ -1688,7 +1746,7 @@ function renderReport(cfg){
 function reportCfg(over = {}){
   const single = VIEW.kind === "single"; const n0 = VIEW.ms[0];
   const ML = mLabel(UI.metric, UI.W, VIEW.hasW);
-  const sub = `${ML}${yLin() ? " [" + VIEW.linUnit + " RMS, linear]" : VIEW.yLab !== "dB" ? " [" + VIEW.yLab + "]" : ""}${viewMode() === "both" ? " + narrowband" : viewMode() === "nb" ? " · narrowband only" : ""} · ${VIEW.bk} octave bands ${fLabHz(UI.b0)}–${fLabHz(UI.b1)}${UI.hw && VIEW.anyVib && UI.W === "raw" ? "" : " · " + W_NAME[UI.W]}${UI.hw && VIEW.anyVib ? " · Wm weighting (ISO 2631-2)" : ""}${single ? "" : ` · ${VIEW.series.filter(s => !s.hidden).length} measurements`}`;
+  const sub = `${ML}${yLin() ? " [" + VIEW.linUnit + " RMS, linear]" : VIEW.yLab !== "dB" ? " [" + VIEW.yLab + "]" : ""}${viewMode() === "both" ? " + narrowband" : viewMode() === "nb" ? " · narrowband only" : ""} · ${VIEW.bk} octave bands ${fLabHz(UI.b0)}–${fLabHz(UI.b1)}${UI.hw && VIEW.anyVib && UI.W === "raw" ? "" : " · " + W_NAME[UI.W]}${UI.hw && VIEW.anyVib ? " · Wm weighting (ISO 2631-2)" : ""}${single ? "" : ` · ${serCountTxt()}`}`;
   let singleRows = [];
   if (single){
     const j = isTot(UI.cursor) ? -1 : n0.d.f.indexOf(UI.cursor);

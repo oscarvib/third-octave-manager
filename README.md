@@ -17,7 +17,8 @@ Herramienta en un único archivo HTML para gestionar y visualizar medidas de rui
   - Cursor sobre bandas o sobre banda estrecha, con lectura de valores.
   - Vibración como velocidad o aceleración (solo visualización).
   - Ponderación de respuesta humana **Wm** (ISO 2631-2 / ISO 20283-5), aplicada a bandas, banda estrecha y totales.
-  - Media energética de la carpeta.
+  - Media energética de la carpeta: añadida a las curvas o «solo la media».
+  - Comparación de medias energéticas de varias carpetas (o de las subcarpetas de una carpeta); cualquiera puede marcarse como ruido de fondo (área sombreada y diferencia al fondo en el cursor).
   - Los ajustes de visualización se guardan por carpeta y se aplican a todos sus espectros.
 - **Imágenes de informe** (PNG para Word): título, resultado, leyenda con valores del cursor y pie; opción de guardar en un paso las imágenes de todas las medidas de una carpeta con la misma apariencia y el mismo eje Y.
 - **Proyectos**: guardar, guardar como y abrir (`.json`), exportar a Excel; recuperación de la última sesión.
@@ -45,6 +46,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 1.4 | 17/11/2026 | Comparación por medias energéticas de carpetas (selección de varias carpetas o subcarpetas de una carpeta); opción «solo la media»; curva de ruido de fondo sombreada con diferencia al fondo en el cursor. |
 | 1.3 | 17/11/2026 | Tiempo de reverberación (ISO 3382-2) desde señales UNV: respuesta impulsiva (integración inversa de Schroeder, truncado de Lundeby) o ruido interrumpido; T20, T30, EDT, ξ, C, INR; media de posiciones e imagen de informe. |
 | 1.2 | 15/11/2026 | La versión instalada funciona totalmente sin internet: la librería de Excel (SheetJS) y las fuentes van incluidas en el repositorio y se guardan al instalar. |
 | 1.1 | 12/11/2026 | Importación de espectros UNV (sonómetro, hidrófono, acelerómetros) con cálculo de bandas; referencia 1 µPa para hidrófonos. |
