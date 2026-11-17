@@ -8,6 +8,7 @@ Herramienta en un único archivo HTML para gestionar y visualizar medidas de rui
 - **Importación**
   - Excel del sonómetro Brüel & Kjær 2250 (tercios, LAeq/LCeq/LZeq, ponderación A/C/Z).
   - Señales temporales UNV (dataset 58/58b): PSD de Welch (Hann, 50 %, Δf 1 Hz) integrada por banda; nombre de canal leído del registro 9.
+  - Tiempo de reverberación desde señales UNV (ISO 3382-2): respuesta impulsiva o caída de ruido interrumpido, filtros de banda de fase cero, T20/T30/EDT por banda con indicadores de calidad y media de posiciones.
   - Espectros UNV (dataset 58 con abscisa en frecuencia: espectro, autoespectro, PSD; los complejos se toman en módulo): se guardan como banda estrecha y se calculan los tercios u octavas. Referencia 20 µPa (aire) o 1 µPa (agua, detectado en los hidrófonos).
   - Excel de espectros FFT de vibraciones (se descartan las líneas por debajo de 1 Hz).
   - Excel de aislamiento a ruido aéreo: R', R'w (C; Ctr) según ISO 717-1, DnT,w, corrección por ruido de fondo (ISO 16283-1) y curvas de decaimiento con T20/T30, recta de regresión e indicadores ξ y C.
@@ -44,6 +45,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 1.3 | 17/11/2026 | Tiempo de reverberación (ISO 3382-2) desde señales UNV: respuesta impulsiva (integración inversa de Schroeder, truncado de Lundeby) o ruido interrumpido; T20, T30, EDT, ξ, C, INR; media de posiciones e imagen de informe. |
 | 1.2 | 15/11/2026 | La versión instalada funciona totalmente sin internet: la librería de Excel (SheetJS) y las fuentes van incluidas en el repositorio y se guardan al instalar. |
 | 1.1 | 12/11/2026 | Importación de espectros UNV (sonómetro, hidrófono, acelerómetros) con cálculo de bandas; referencia 1 µPa para hidrófonos. |
 | 1.0 | 12/11/2026 | Primera versión publicada en GitHub: importación 2250, UNV, FFT y aislamiento; ponderación Wm; imágenes de informe por carpeta; icono e instalación como aplicación. |

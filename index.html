@@ -240,7 +240,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 <script>if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.2 · 15 Nov 2026">v1.2</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.3 · 17 Nov 2026">v1.3</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -461,6 +461,84 @@ function envelope(d, nb){
   return { mn, mx };
 }
 
+/* ---------- reverberation time (ISO 3382-2): impulse response (backward integration) or interrupted noise ---------- */
+function nextSmooth(n){ const ok = x => { for (const p of [2, 3, 5]) while (x % p === 0) x /= p; return x === 1; }; for (let m = Math.max(2, n); ; m++) if (ok(m)) return m; }
+function linreg(t, y, a, b){ let sx = 0, sy = 0, sxx = 0, sxy = 0, m = 0; for (let i = a; i <= b; i++){ if (!isFinite(y[i])) continue; sx += t[i]; sy += y[i]; sxx += t[i]*t[i]; sxy += t[i]*y[i]; m++; } if (m < 2) return null; const vx = sxx - sx*sx/m; if (!(vx > 0)) return null; const sl = (sxy - sx*sy/m)/vx; return { a: (sy - sl*sx)/m, b: sl }; }
+/* mean energy per sample in blocks of w samples, from i0 */
+function blockLevels(e, i0, i1, w){ const nb = Math.floor((i1 - i0)/w); const t = new Float64Array(nb), L = new Float64Array(nb);
+  for (let k = 0; k < nb; k++){ let s = 0; const a = i0 + k*w; for (let i = a; i < a + w; i++) s += e[i]; L[k] = s > 0 ? 10*Math.log10(s/w) : -400; t[k] = (k + 0.5)*w; } return { t, L }; }
+/* Lundeby et al. (1995): noise level, crosspoint and late decay slope of an impulse response, in samples */
+function lundeby(e, on, end, fs){
+  const meanL = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += e[i]; return b > a && s > 0 ? 10*Math.log10(s/(b - a)) : -400; };
+  let w = Math.max(1, Math.round(0.01*fs));
+  let { t, L } = blockLevels(e, on, end, w);
+  if (L.length < 6) return null;
+  let Ln = meanL(Math.round(end - 0.1*(end - on)), end);
+  let Lmax = -Infinity, kmax = 0; for (let k = 0; k < L.length; k++) if (L[k] > Lmax){ Lmax = L[k]; kmax = k; }
+  const fit = () => { let kA = kmax; while (kA < L.length - 1 && L[kA] > Lmax - 5) kA++; let kB = kA; while (kB < L.length - 1 && L[kB] > Ln + 10) kB++; if (kB - kA < 2) kB = Math.min(L.length - 1, kA + 2); return linreg(t, L, kA, kB); };
+  let r = fit(); if (!r || !(r.b < 0)) return { tc: end - on, Ln, Lmax, r: null };
+  let tc = Math.min(end - on, (Ln - r.a)/r.b);
+  for (let it = 0; it < 6; it++){
+    const w2 = Math.max(1, Math.round((-10/r.b)/5));            // 5 blocks per 10 dB of decay
+    ({ t, L } = blockLevels(e, on, end, w2)); if (L.length < 4) break;
+    Lmax = -Infinity; for (let k = 0; k < L.length; k++) if (L[k] > Lmax){ Lmax = L[k]; kmax = k; }
+    const nA = Math.round(on + tc + (-7/r.b));                     // noise: from 5–10 dB below the crosspoint
+    Ln = nA < end - 0.1*(end - on) ? meanL(nA, end) : meanL(Math.round(end - 0.1*(end - on)), end);
+    const r2 = fit(); if (!r2 || !(r2.b < 0)) break;
+    const tc2 = Math.min(end - on, (Ln - r2.a)/r2.b); r = r2;
+    const conv = Math.abs(tc2 - tc) < 0.002*fs; tc = tc2; if (conv) break;
+  }
+  return { tc: Math.max(w, tc), Ln, Lmax, r };
+}
+function rtProcess(key, p){
+  const s = SIG.get(key); if (!s) return { key, error: "Signal not loaded" };
+  const fs = s.fs, Q = quantity(s.units, s.code), gain = Q.f;
+  const ref = Q.q === "sound" ? (p.refP || 2e-5) : Q.q === "accel" ? (p.refA || 1e-6) : Q.q === "vel" ? (p.refV || 1e-9) : 1;
+  const i0 = Math.max(0, Math.round((p.t0 || 0)*fs)), i1 = Math.min(s.data.length, p.t1 > 0 ? Math.round(p.t1*fs) : s.data.length);
+  const Ls = i1 - i0; if (Ls < 0.2*fs) return { key, error: "Signal shorter than 0.2 s" };
+  let mean = 0; for (let i = i0; i < i1; i++) mean += s.data[i]; mean /= Ls;
+  // whole record in the frequency domain (zero-padded so the filters' ringing does not wrap around)
+  const N = nextSmooth(Ls + Math.round(0.25*fs)); const P = plan(N);
+  const xr = new Float64Array(N), xi = new Float64Array(N); for (let i = 0; i < Ls; i++) xr[i] = (s.data[i0 + i] - mean)*gain;
+  let [R, I] = fft(P, xr, xi); const XR = Float64Array.from(R), XI = Float64Array.from(I);
+  const hb = Math.max(1, Math.round((p.dt || 0.002)*fs)), dt = hb/fs;
+  // broadband: impulse or interrupted noise? (time spent within 3 dB of the maximum 10 ms level)
+  let mode = p.mode;
+  if (mode !== "impulse" && mode !== "noise"){
+    const e = new Float64Array(Ls); for (let i = 0; i < Ls; i++){ const v = (s.data[i0 + i] - mean); e[i] = v*v; }
+    const { L } = blockLevels(e, 0, Ls, Math.max(1, Math.round(0.01*fs))); let mx = -Infinity; for (const v of L) mx = Math.max(mx, v);
+    let c = 0; for (const v of L) if (v > mx - 3) c++; mode = c*0.01 < 0.15 ? "impulse" : "noise";
+  }
+  const bands = bandsFor(p.bands, p.fmin, Math.min(p.fmax, fs/2/1.25));
+  const r = p.bands === "1/1" ? Math.pow(10, 0.3) : Math.pow(10, 0.1); const Qb = 1/(Math.sqrt(r) - 1/Math.sqrt(r));
+  const out = []; let nMax = 0;
+  const yr = new Float64Array(N), yi = new Float64Array(N); const e = new Float64Array(Ls);
+  for (const b of bands){
+    // zero-phase 6th-order Butterworth band-pass (IEC 61260 shape), applied as |H| on the spectrum
+    for (let k = 0; k < N; k++){ const f = (k <= N/2 ? k : N - k)*fs/N; let h = 0; if (f > 0){ const u = Qb*(f/b.fc - b.fc/f); h = 1/Math.sqrt(1 + Math.pow(u*u, 3)); } yr[k] = XR[k]*h; yi[k] = -XI[k]*h; }
+    [R, I] = fft(P, yr, yi);
+    for (let i = 0; i < Ls; i++){ const v = R[i]/N; e[i] = v*v; }
+    let curve, inr = null, tcs = null;
+    if (mode === "impulse"){
+      let emax = 0, imax = 0; for (let i = 0; i < Ls; i++) if (e[i] > emax){ emax = e[i]; imax = i; }
+      let on = 0; for (let i = 0; i <= imax; i++) if (e[i] >= emax*0.01){ on = i; break; }   // ISO 3382-1: 20 dB below the maximum
+      const lu = lundeby(e, on, Ls, fs);
+      const tc = lu ? Math.min(Ls - on, Math.round(lu.tc)) : Ls - on; tcs = tc/fs; inr = lu ? lu.Lmax - lu.Ln : null;
+      let C = 0; if (lu && lu.r && lu.r.b < 0){ const k = lu.r.b*Math.LN10/10; C = Math.pow(10, (lu.r.a + lu.r.b*tc)/10)/(-k); }   // energy of the decay beyond the crosspoint
+      const S = new Float64Array(tc + 1); let acc = C; for (let i = tc; i >= 0; i--){ acc += e[on + i] || 0; S[i] = acc; }
+      const n = Math.floor(tc/hb) + 1; curve = new Float32Array(n); for (let k = 0; k < n; k++) curve[k] = S[k*hb] > 0 ? 10*Math.log10(S[k*hb]/S[0]) : NaN;
+    } else {
+      // centred moving average of the energy: long enough to tame the random fluctuation of a narrow band of noise (~4/bandwidth), short enough not to bend the decay
+      const W = Math.max(hb, Math.round(Math.min(0.1, Math.max(0.01, 4/(b.hi - b.lo)))*fs)); const cs = new Float64Array(Ls + 1); for (let i = 0; i < Ls; i++) cs[i + 1] = cs[i] + e[i];
+      const n = Math.min(Math.floor(Ls/hb), Math.round(30/dt)); curve = new Float32Array(n);
+      for (let k = 0; k < n; k++){ const c0 = k*hb + hb/2, a0 = Math.max(0, Math.round(c0 - W/2)), a1 = Math.min(Ls, Math.round(c0 + W/2)); const sm = (cs[a1] - cs[a0])/Math.max(1, a1 - a0); curve[k] = sm > 0 ? 10*Math.log10(sm/(ref*ref)) : NaN; }
+    }
+    nMax = Math.max(nMax, curve.length); out.push({ n: b.n, curve, inr, tc: tcs });
+  }
+  const dec = new Float32Array(out.length*nMax).fill(NaN); out.forEach((o, j) => dec.set(o.curve, j*nMax));
+  return { key, mode, dt, nn: nMax, bn: out.map(o => o.n), inr: out.map(o => o.inr == null ? null : Math.round(o.inr*10)/10), tc: out.map(o => o.tc), dec, q: Q.q, ref };
+}
+
 self.onmessage = e => {
   const m = e.data;
   try {
@@ -480,6 +558,13 @@ self.onmessage = e => {
       for (const j of m.jobs){
         const r = process(j.key, j.p); done++;
         self.postMessage({ op: "result", id: m.id, mid: j.mid, r, done, tot }, r.nb ? [r.nb.buffer] : []);
+      }
+      self.postMessage({ op: "done", id: m.id });
+    } else if (m.op === "rt"){
+      const tot = m.jobs.length; let done = 0;
+      for (const j of m.jobs){
+        const r = rtProcess(j.key, j.p); done++;
+        self.postMessage({ op: "result", id: m.id, mid: j.mid, r, done, tot }, r.dec ? [r.dec.buffer] : []);
       }
       self.postMessage({ op: "done", id: m.id });
     }
@@ -503,7 +588,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "1.2";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "1.3";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -754,6 +839,7 @@ const ICO_F = '<svg viewBox="0 0 16 16"><path d="M1.5 3.5h4.3l1.5 1.5h7.2v8.5h-1
 const ICO_FO = '<svg viewBox="0 0 16 16"><path d="M1.5 3.5h4.3l1.5 1.5h6v2H4.2l-2.7 6.5z" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.2 7h11l-2.6 6.5H1.5z" fill="currentColor" fill-opacity=".4" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
 const ICO_M = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M4.5 12.5V8.5M7 12.5V5M9.5 12.5V7M12 12.5V10" stroke-width="1.7"/></svg>';
 const ICO_T = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 8h1.5l1.2-3.5 1.6 7 1.6-6 1.4 4.5 1-2H13" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+const ICO_RT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3.5 4.5c2 0 2.5 1 3.5 3s2.5 4 5.5 4" stroke-width="1.4" stroke-linecap="round"/><path d="M3.5 3.5v9h9" stroke-width="1" opacity=".6"/></svg>';
 const ICO_AE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="2.5" width="4.5" height="11" rx="1" stroke-width="1.1"/><rect x="10" y="2.5" width="4.5" height="11" rx="1" stroke-width="1.1"/><path d="M8 2v12" stroke-width="2"/></svg>';
 const ICO_C = '<svg viewBox="0 0 10 10"><path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 const ICO_MORE = '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>';
@@ -774,7 +860,7 @@ function renderTree(){
     const sub = f ? `<span class="cnt" title="measurements inside">${measUnder(id).length}</span>` : `<span class="sub">${esc(fmtTime(parseStart(n.d.start)))}</span>`;
     return `<div class="${cls}" data-id="${id}" style="--lvl:${lvl}" draggable="true" role="treeitem" aria-level="${lvl+1}" aria-selected="${UI.sel.has(id)}"${f ? ` aria-expanded="${!!n.open}"` : ""}>
       <button class="caret ${f && n.kids.length ? "" : "none"}" tabindex="-1" data-act="toggle" aria-label="Expand or collapse">${ICO_C}</button>
-      <span class="ico">${f ? (n.open ? ICO_FO : ICO_F) : (n.d.kind === "time" ? ICO_T : n.d.kind === "ae" ? ICO_AE : ICO_M)}</span><span class="lbl">${esc(n.name)}</span>${sub}
+      <span class="ico">${f ? (n.open ? ICO_FO : ICO_F) : (n.d.kind === "time" ? ICO_T : n.d.kind === "ae" ? ICO_AE : n.d.kind === "rt" ? ICO_RT : ICO_M)}</span><span class="lbl">${esc(n.name)}</span>${sub}
       <button class="ib more" tabindex="-1" data-act="menu" aria-label="Options">${ICO_MORE}</button></div>`;
   }).join("");
   el.scrollTop = st;
@@ -1038,7 +1124,7 @@ function newProject(){
 }
 function exportXlsx(ids){
   if (typeof XLSX === "undefined"){ toast("Excel library not available"); return; }
-  const ms = [...new Set(topLevel(ids).flatMap(measUnder))].filter(id => N(id).d.kind !== "ae"); if (!ms.length){ toast("Nothing to export (insulation tests: use Copy table in the test)"); return; }
+  const ms = [...new Set(topLevel(ids).flatMap(measUnder))].filter(id => N(id).d.kind !== "ae" && N(id).d.kind !== "rt"); if (!ms.length){ toast("Nothing to export (insulation tests and reverberation times: use Copy table)"); return; }
   const metrics = [...new Set(ms.flatMap(id => Object.keys(N(id).d.m)))];
   const freqs = [...new Set(ms.flatMap(id => N(id).d.f))].sort((a, b) => a - b);
   const hdr = ["Project Name", "Start Time", "Elapsed Time"]; metrics.forEach(m => freqs.forEach(f => hdr.push(`${m} ${fExportLab(f)}`))); hdr.push("Folder");
@@ -1053,9 +1139,9 @@ let VIEW = null;
 const cssPalette = () => { const cs = getComputedStyle(document.documentElement); return [1,2,3,4,5,6,7,8,9,10].map(i => cs.getPropertyValue("--s" + i).trim()); };
 function viewCtx(){
   const c = viewCtx0(); if (!c) return c;
-  const isAe = id => N(id).d.kind === "ae";
-  c.aes = c.ids.filter(isAe); c.ids = c.ids.filter(id => !isAe(id));
-  if (c.aes.length) c.kind = c.ids.length > 1 ? "multi" : "single";
+  const isAe = id => N(id).d.kind === "ae", isRt = id => N(id).d.kind === "rt";
+  c.aes = c.ids.filter(isAe); c.rts = c.ids.filter(isRt); c.ids = c.ids.filter(id => !isAe(id) && !isRt(id));
+  if (c.aes.length || c.rts.length) c.kind = c.ids.length > 1 ? "multi" : "single";
   return c;
 }
 function viewCtx0(){
@@ -1170,10 +1256,12 @@ function valAt(s){ if (isTot(UI.cursor)) return s.tot[UI.cursor]; if (curNb() &&
 function renderView(){
   const v = $("#view"); AEV = null; AESUM = null;
   const a0 = UI.active && N(UI.active);
+  RTV = null; RTSUM = null;
   if (a0 && a0.t === "m" && a0.d.kind === "ae" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderAe(a0); return; }
+  if (a0 && a0.t === "m" && a0.d.kind === "rt" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderRt(a0); return; }
   VIEW = buildView();
   if (!VIEW){ v.innerHTML = `<div class="empty">${measUnder("root").length ? `<h2>Select a measurement</h2>Click a measurement in the tree to see its third-octave spectrum and LAeq. Click a folder, or Ctrl-click several measurements, to overlay them and compare.` : `<h2>Empty project</h2>Import an Excel file exported from the sound level meter, UNV time signals (.unv) from the acquisition system, or open a saved project (.json).`}</div>`; return; }
-  if (VIEW.empty && VIEW.aes && VIEW.aes.length){ const aes = VIEW.aes; v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div>` + aeSummaryHtml(aes); VIEW = null; bindAeSummary(aes); return; }
+  if (VIEW.empty && ((VIEW.aes && VIEW.aes.length) || (VIEW.rts && VIEW.rts.length))){ const aes = VIEW.aes || [], rts = VIEW.rts || []; v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div>` + (rts.length ? rtSummaryHtml(rts) : "") + (aes.length ? aeSummaryHtml(aes) : ""); VIEW = null; if (rts.length) bindRtSummary(rts); if (aes.length) bindAeSummary(aes); return; }
   if (VIEW.empty){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div><div class="empty">This folder is empty. Drag measurements here, or right-click → <b>Import Excel here…</b></div>`; VIEW = null; return; }
   const { ms, metrics, freqs, series, hasW, totKeys } = VIEW; const W = UI.W;
   const one = VIEW.kind === "single" ? ms[0] : null;
@@ -1218,8 +1306,10 @@ function renderView(){
   below += `<div class="sec-h"><h4>Band table</h4><span class="hint">${isMaxMin(UI.metric) ? "Max/min totals are the energetic sum of bands, not the broadband value measured by the instrument." : "Totals = energetic sum of all bands."}${(UI.qty && UI.qty !== "native" || UI.hw) && VIEW.anyVib ? ` Vibration ${UI.hw ? "Wm-weighted (ISO 2631-2) " : ""}${UI.qty && UI.qty !== "native" ? (UI.hw ? "and converted " : "converted ") : ""}for display: each band at its true mid-frequency, each narrowband line at its own frequency.` : ""}</span><span class="sp"><button class="btn" id="bCopy">Copy table</button><button class="btn" id="bXls">Export to Excel</button></span></div>
     <div class="tblwrap" id="btbl"></div>`;
 
+  if (VIEW.rts && VIEW.rts.length) below += rtSummaryHtml(VIEW.rts);
   if (VIEW.aes && VIEW.aes.length) below += aeSummaryHtml(VIEW.aes);
   v.innerHTML = head + procPanelHtml() + ctr + chart + timeHtml() + below;
+  if (VIEW.rts && VIEW.rts.length) bindRtSummary(VIEW.rts);
   if (VIEW.aes && VIEW.aes.length) bindAeSummary(VIEW.aes);
   renderBandTable(); renderReadout(); drawChart(); bindProcPanel(); drawTime();
   if ($("#cMode")) $("#cMode").onchange = e => { UI.mode = e.target.value; UI.yMin = UI.yMax = null; renderView(); };
@@ -1774,7 +1864,7 @@ function getNb(id){
   const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
   const i16 = new Int16Array(u.buffer); const f = new Float32Array(i16.length); for (let k = 0; k < i16.length; k++) f[k] = i16[k] === -32768 ? NaN : i16[k]/100; NBDEC.set(id, f); return f;
 }
-function usedNb(){ const o = {}; for (const n of Object.values(S.nodes)){ if (n.t !== "m") continue; if (n.d.nb && NBS[n.d.nb.ref]) o[n.d.nb.ref] = NBS[n.d.nb.ref]; if (n.d.kind === "ae") (n.d.T || []).forEach(x => { if (x.dec && NBS[x.dec.ref]) o[x.dec.ref] = NBS[x.dec.ref]; }); } return o; }
+function usedNb(){ const o = {}; for (const n of Object.values(S.nodes)){ if (n.t !== "m") continue; if (n.d.nb && NBS[n.d.nb.ref]) o[n.d.nb.ref] = NBS[n.d.nb.ref]; if (n.d.kind === "ae") (n.d.T || []).forEach(x => { if (x.dec && NBS[x.dec.ref]) o[x.dec.ref] = NBS[x.dec.ref]; }); if (n.d.kind === "rt" && n.d.dec && NBS[n.d.dec.ref]) o[n.d.dec.ref] = NBS[n.d.dec.ref]; } return o; }
 
 /* exact (not band-rounded) weighting, for narrowband lines */
 function wAf(f){ if (f <= 0) return -200; const f2 = f*f; const ra = (12194**2*f2*f2)/((f2+20.6**2)*Math.sqrt((f2+107.7**2)*(f2+737.9**2))*(f2+12194**2)); return 20*Math.log10(ra) + 2.0; }
@@ -1860,8 +1950,11 @@ function unvDialog(file, res, dest){
     b.innerHTML = `<div><b>${esc(file.name)}</b> · ${ch.length} time channel${ch.length > 1 ? "s" : ""} · fs ${fs0} Hz · ${fmtDur(Math.max(...ch.map(c => c.dur)))} (${Math.max(...ch.map(c => c.dur)).toFixed(1)} s)${res.skipped ? ` · ${res.skipped} other dataset(s) ignored` : ""}</div>
       <div class="opts"><label><input type="checkbox" id="uAll" checked> All</label></div>
       <div class="tblwrap" style="max-height:220px;overflow:auto"><table class="list" id="uTbl"><thead><tr><th></th><th>Channel</th><th>Units</th><th>Type</th><th class="n">fs [Hz]</th><th class="n">Duration [s]</th></tr></thead><tbody></tbody></table></div>
-      <div class="sec-h"><h4>Processing</h4><span class="hint">Welch average, PSD integrated in each band (as procesa_tercios.m). You can change it later from any folder.</span></div>
-      <div class="proc flat" id="uProc">${paramsForm({ ...PDEF, ...(UI.lastP || {}) }, "u")}</div>
+      <div class="opts"><label for="uAna">Analysis <select id="uAna"><option value="spec" ${UI.lastAna !== "rt" ? "selected" : ""}>Spectrum · 1/3 or 1/1 octave and narrowband</option><option value="rt" ${UI.lastAna === "rt" ? "selected" : ""}>Reverberation time · impulse or interrupted noise (ISO 3382-2)</option></select></label></div>
+      <div id="uSpecBox"><div class="sec-h"><h4>Processing</h4><span class="hint">Welch average, PSD integrated in each band (as procesa_tercios.m). You can change it later from any folder.</span></div>
+      <div class="proc flat" id="uProc">${paramsForm({ ...PDEF, ...(UI.lastP || {}) }, "u")}</div></div>
+      <div id="uRtBox"><div class="sec-h"><h4>Reverberation time</h4><span class="hint">One result per channel: T20, T30 (and EDT for impulses) per band, decay curves and quality indicators. Several channels or files in a folder are averaged.</span></div>
+      <div class="proc flat" id="uRt">${rtForm({ ...RTDEF, ...(UI.lastRt || {}) }, "q")}</div></div>
       <div>Destination:</div>`;
     const QN = { sound: "Sound (Pa)", accel: "Acceleration", vel: "Velocity", other: "Other" };
     const tb = b.querySelector("#uTbl tbody");
@@ -1871,12 +1964,30 @@ function unvDialog(file, res, dest){
     const fp = folderPicker(dest);
     const opt = document.createElement("label"); opt.className = "ck"; opt.innerHTML = `<input type="checkbox" id="uWrap" checked> Create a folder named after the file`;
     b.append(fp, opt);
+    const ana = () => b.querySelector("#uAna").value; const showAna = () => { b.querySelector("#uSpecBox").hidden = ana() === "rt"; b.querySelector("#uRtBox").hidden = ana() !== "rt"; };
+    b.querySelector("#uAna").onchange = showAna; showAna();
     modal("Import time signals (UNV)", b, [
       { label: "Cancel", run: () => done() },
       { label: "Import and process", primary: true, run: () => {
-        const p = readParams(b, "u"); UI.lastP = p;
         const sel = [...tb.querySelectorAll("input:checked")].map(x => ch[+x.dataset.i]);
         if (!sel.length){ toast("Tick at least one channel"); return false; }
+        UI.lastAna = ana();
+        if (ana() === "rt"){
+          const rp = readRt(b, "q"); UI.lastRt = rp; let base, ids = [];
+          commit(() => {
+            base = b.querySelector("#uWrap").checked ? addFolder(file.name.replace(/\.[^.]+$/, ""), fp.value) : fp.value;
+            for (const c of sel){
+              const d = { kind: "rt", start: unvDate(c, file.lastModified), dur: fmtDur(c.dur), src: file.name, f: [], m: {}, w: {},
+                meta: { Units: c.units || "—", Sampling: `${+c.fs.toFixed(2)} Hz` }, ts: { key: c.key, file: file.name, idx: c.idx, units: c.units, fs: c.fs, dur: c.dur, q: c.q }, rp };
+              ids.push(addMeas(chName(c), d, base));
+            }
+            N(fp.value).open = true;
+          });
+          UI.sel = new Set([ids.length === 1 ? ids[0] : base]); UI.active = ids.length === 1 ? ids[0] : base; UI.hidden.clear(); renderTree(); renderView();
+          rtRecalc(ids, rp).then(() => { renderView(); done(); });
+          return;
+        }
+        const p = readParams(b, "u"); UI.lastP = p;
         let base, ids = [];
         commit(() => {
           base = b.querySelector("#uWrap").checked ? addFolder(file.name.replace(/\.[^.]+$/, ""), fp.value) : fp.value;
@@ -1923,7 +2034,7 @@ let relinkCb = null;
 function relink(){ $("#fUnv").value = ""; $("#fUnv").click(); }
 async function relinkFiles(files){
   let n = 0; for (const f of files){ const r = await loadUnv(f); if (r) n += r.chans.length; }
-  const need = Object.values(S.nodes).filter(x => x.t === "m" && x.d.kind === "time");
+  const need = Object.values(S.nodes).filter(x => x.t === "m" && (x.d.kind === "time" || x.d.kind === "rt"));
   const ok = need.filter(x => LOADED.has(x.d.ts.key)).length;
   renderView(); toast(`${n} channel(s) loaded · ${ok} of ${need.length} measurements now have their signal`);
 }
@@ -2418,21 +2529,28 @@ function drawBandChart(c, X, Y, Wd, Ht, K, o){
   c.restore();
 }
 /* ---------- decay evaluation (ISO 3382-2): regression line, non-linearity ξ and curvature C ---------- */
-function decayFit(get, n, dt, range){
+function decayFit(get, n, dt, range, o = {}){   // o.L0: known start level (backward-integrated curves start at 0 dB); o.from: dB below L0 where the range starts (5, or 0 for EDT)
   const raw = new Float64Array(n); let any = false; for (let i = 0; i < n; i++){ const v = get(i); raw[i] = isFinite(v) ? v : NaN; if (isFinite(v)) any = true; }
   if (!any) return { ok: false, why: "no data" };
   const w = Math.max(1, Math.round(0.025/dt)); const ma = new Float64Array(n);       // 25 ms moving average for the crossings
   for (let i = 0; i < n; i++){ let s = 0, c = 0; for (let k = Math.max(0, i - w); k <= Math.min(n - 1, i + w); k++) if (isFinite(raw[k])){ s += raw[k]; c++; } ma[i] = c ? s/c : NaN; }
-  const head = [...ma.slice(0, Math.max(3, Math.floor(n*0.2)))].filter(isFinite).sort((a, b) => a - b); if (!head.length) return { ok: false, why: "no data" };
-  const P = head[Math.floor(head.length/2)];
-  let iDrop = -1; for (let i = 0; i < n; i++) if (ma[i] < P - 10){ iDrop = i; break; }
-  if (iDrop < 2) return { ok: false, why: "no decay found" };
-  const iEndPl = Math.max(1, iDrop - Math.round(0.08/dt)); let s0 = 0, c0 = 0; for (let i = 0; i < iEndPl; i++) if (isFinite(ma[i])){ s0 += ma[i]; c0++; }
-  const L0 = c0 ? s0/c0 : P;
-  let i5 = -1; for (let i = 0; i < n; i++) if (ma[i] <= L0 - 5){ i5 = i; break; }
-  let ie = -1; if (i5 >= 0) for (let i = i5; i < n; i++) if (ma[i] <= L0 - 5 - range){ ie = i; break; }
+  const from = o.from ?? 5; let L0, iDropK = -1;
+  if (o.L0 != null) L0 = o.L0;
+  else {
+    const head = [...ma.slice(0, Math.max(3, Math.floor(n*0.2)))].filter(isFinite).sort((a, b) => a - b); if (!head.length) return { ok: false, why: "no data" };
+    const P = head[Math.floor(head.length/2)];
+    let iDrop = -1; for (let i = 0; i < n; i++) if (ma[i] < P - 10){ iDrop = i; break; }
+    if (iDrop < 2) return { ok: false, why: "no decay found" };
+    const iEndPl = Math.max(1, iDrop - Math.round(0.08/dt)); let s0 = 0, c0 = 0; for (let i = 0; i < iEndPl; i++) if (isFinite(ma[i])){ s0 += ma[i]; c0++; }
+    L0 = c0 ? s0/c0 : P; iDropK = iDrop;
+  }
+  const crv = o.L0 != null ? raw : ma;   // a backward-integrated curve is already smooth: find the crossings on it directly
+  let i5 = -1;
+  if (o.back && iDropK > 0){ for (let i = iDropK; i >= 0; i--) if (crv[i] > L0 - from){ i5 = i + 1; break; } if (i5 < 0) i5 = 0; }   // last crossing before the decay: dips of the steady noise are not the start
+  else for (let i = 0; i < n; i++) if (crv[i] <= L0 - from + 1e-9){ i5 = i; break; }
+  let ie = -1; if (i5 >= 0) for (let i = i5; i < n; i++) if (crv[i] <= L0 - from - range){ ie = i; break; }
   const tail = [...ma.slice(Math.floor(n*0.85))].filter(isFinite).sort((a, b) => a - b); const floor = tail.length ? tail[Math.floor(tail.length/2)] : NaN;
-  if (i5 < 0 || ie < 0 || ie - i5 < 4) return { ok: false, why: "range not reached (noise floor)", L0, floor };
+  if (i5 < 0 || ie < 0 || ie - i5 < 4) return { ok: false, why: ie - i5 < 4 && ie >= 0 ? "decay too fast for the time resolution" : "range not reached (noise floor)", L0, floor };
   let sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0, m = 0;
   for (let i = i5; i <= ie; i++){ const v = raw[i]; if (!isFinite(v)) continue; const t = i*dt; sx += t; sy += v; sxx += t*t; sxy += t*v; syy += v*v; m++; }
   const vx = sxx - sx*sx/m, cxy = sxy - sx*sy/m; const b = cxy/vx, a = (sy - b*sx)/m;
@@ -2440,7 +2558,7 @@ function decayFit(get, n, dt, range){
   let qx = 0, qy = 0, qxx = 0, qxy = 0, qyy = 0, q = 0; for (let i = i5; i <= ie; i++){ const v = ma[i]; if (!isFinite(v)) continue; const t = i*dt; qx += t; qy += v; qxx += t*t; qxy += t*v; qyy += v*v; q++; }
   const ux = qxx - qx*qx/q, uy = qyy - qy*qy/q, uxy = qxy - qx*qy/q; const r2 = ux > 0 && uy > 0 ? uxy*uxy/(ux*uy) : 0;
   if (!(b < 0)) return { ok: false, why: "no negative slope", L0, floor };
-  return { ok: true, T: -60/b, a, b, t5: i5*dt, te: ie*dt, L0, xi: 1000*(1 - r2), floor, margin: (L0 - 5 - range) - floor };
+  return { ok: true, T: -60/b, a, b, t5: i5*dt, te: ie*dt, L0, xi: 1000*(1 - r2), floor, margin: (L0 - from - range) - floor };
 }
 const XI_CLS = v => v == null ? "" : v <= 5 ? "q-ok" : v <= 10 ? "q-mid" : "q-bad";
 const C_CLS = v => v == null ? "" : v >= 0 && v <= 5 ? "q-ok" : v > -5 && v <= 10 ? "q-mid" : "q-bad";
@@ -2684,6 +2802,194 @@ function bindAeSummary(ids){
 }
 let AESUM = null;
 
+/* ---------- reverberation time from UNV time signals (ISO 3382-2) ---------- */
+const RTDEF = { bands: "1/3", fmin: 100, fmax: 5000, mode: "auto", t0: 0, t1: 0, dt: 0.002, refP: 2e-5, refA: 1e-6, refV: 1e-9 };
+const RT_MODE = { auto: "Detect automatically", impulse: "Impulse response · backward integration", noise: "Interrupted noise · level decay" };
+const RT_MODE_SHORT = { impulse: "Impulse response (Schroeder backward integration, Lundeby truncation)", noise: "Interrupted noise (decay of the band level)" };
+function rtForm(p, pre){
+  const fo = sel => NOMS.map(f => `<option value="${f}" ${Math.abs(f - sel) < 1e-6 ? "selected" : ""}>${fLabHz(f)}</option>`).join("");
+  return `<div class="grid">
+    <label for="${pre}mode">Signal <select id="${pre}mode">${Object.entries(RT_MODE).map(([k, l]) => `<option value="${k}" ${p.mode === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <label for="${pre}bands">Bands <select id="${pre}bands"><option value="1/3" ${p.bands === "1/3" ? "selected" : ""}>1/3 octave</option><option value="1/1" ${p.bands === "1/1" ? "selected" : ""}>1/1 octave</option></select></label>
+    <label for="${pre}fmin">From <select id="${pre}fmin">${fo(p.fmin)}</select> to <select id="${pre}fmax" aria-label="Last band">${fo(p.fmax)}</select></label>
+    <label for="${pre}t0">Time range [s] <input type="number" id="${pre}t0" min="0" step="0.5" value="${p.t0 || 0}"> to <input type="number" id="${pre}t1" aria-label="Time range end" min="0" step="0.5" placeholder="end" value="${p.t1 > 0 ? p.t1 : ""}"></label>
+  </div>`;
+}
+function readRt(root, pre){
+  const g = id => root.querySelector("#" + pre + id); const num = (id, d) => { const v = parseFloat(String(g(id).value).replace(",", ".")); return isFinite(v) ? v : d; };
+  const p = { ...RTDEF, mode: g("mode").value, bands: g("bands").value, fmin: +g("fmin").value, fmax: +g("fmax").value, t0: Math.max(0, num("t0", 0)), t1: Math.max(0, num("t1", 0)) };
+  if (p.fmin > p.fmax) [p.fmin, p.fmax] = [p.fmax, p.fmin]; if (p.t1 && p.t1 <= p.t0) p.t1 = 0; return p;
+}
+const rtSummaryTxt = p => `${p.bands} octave ${fLabHz(p.fmin)}–${fLabHz(p.fmax)} · ${p.mode === "auto" ? "signal type detected" : p.mode === "impulse" ? "impulse" : "interrupted noise"}${p.t0 || p.t1 ? ` · ${p.t0 || 0}–${p.t1 || "end"} s` : ""}`;
+function applyRt(d, r, p){
+  d.F = r.bn.map(nominal); d.mode = r.mode; d.dec = { ref: storeNb(r.dec), n: r.nn, dt: r.dt }; d.inr = r.inr; d.tc = r.tc; d.rp = { ...p };
+  d.meta = { ...(d.meta || {}), Method: r.mode === "impulse" ? "Impulse response · backward integration" : "Interrupted noise · level decay", "Time step": `${+(r.dt*1000).toFixed(2)} ms` };
+}
+async function rtRecalc(ids, p){
+  if (BUSY){ toast("Processing already running"); return; }
+  const jobs = []; let missing = 0;
+  for (const id of ids){ const n = N(id); if (!n || n.t !== "m" || n.d.kind !== "rt") continue; if (!LOADED.has(n.d.ts.key)){ missing++; continue; } jobs.push({ mid: id, key: n.d.ts.key, p: p || n.d.rp || RTDEF }); }
+  if (!jobs.length){ toast(missing ? `Signals not loaded (${missing}). Use “Load source files…” and pick the .unv files.` : "Nothing to calculate"); return; }
+  BUSY = { done: 0, tot: jobs.length }; showBusy(); toast(`Calculating reverberation time (${jobs.length})…`);
+  const results = [];
+  try { await wcall({ op: "rt", jobs }, [], m => { if (m.op === "result"){ results.push(m); BUSY.done = m.done; showBusy(); } }); }
+  catch(e){ toast("Calculation failed: " + e.message); }
+  BUSY = null; let ok = 0, bad = 0, why = "";
+  commit(() => { for (const m of results){ const n = N(m.mid); if (!n) continue; if (m.r.error){ bad++; why = m.r.error; continue; } applyRt(n.d, m.r, jobs.find(j => j.mid === m.mid).p); ok++; } });
+  toast(`${ok} reverberation measurement${ok === 1 ? "" : "s"} calculated${bad ? ` · ${bad} failed (${why})` : ""}${missing ? ` · ${missing} without signal loaded` : ""}`);
+}
+/* fits of one band: T20, T30, EDT (impulse only), curvature C and the dynamic-range check */
+function rtFits(d, j){
+  const a = getNb(d.dec.ref), nn = d.dec.n, dt = d.dec.dt; const get = s => a[j*nn + s];
+  const imp = d.mode === "impulse", o = imp ? { L0: 0 } : { back: true };
+  const f20 = decayFit(get, nn, dt, 20, o), f30 = decayFit(get, nn, dt, 30, o), edt = imp ? decayFit(get, nn, dt, 10, { L0: 0, from: 0 }) : null;
+  const C = f20.ok && f30.ok ? 100*(f30.T/f20.T - 1) : null;
+  const inr = imp ? d.inr[j] : null;
+  // ISO 3382-2: the bottom of the evaluation range ≥ 10 dB above the background (impulse: INR ≥ 35 dB for T20, ≥ 45 dB for T30)
+  const rng = (f, r) => !f.ok ? false : imp ? inr != null && inr >= r + 15 : f.margin >= 10;
+  return { get, nn, dt, f20, f30, edt, C, inr, ok20: rng(f20, 20), ok30: rng(f30, 30) };
+}
+const rtPick = (f, tk) => tk === "T30" ? f.f30 : tk === "EDT" ? f.edt : f.f20;
+const rtVal = (f, tk) => { const x = rtPick(f, tk); return x && x.ok ? x.T : null; };
+function rtMid(F, vals){ const a = vals[F.indexOf(500)], b = vals[F.indexOf(1000)]; return a != null && b != null ? (a + b)/2 : null; }
+let RTV = null, RTSUM = null;
+function renderRt(n){
+  const v = $("#view"); const d = n.d; RTV = { id: n.id };
+  const tk = UI.rtT || "T20"; const loaded = d.ts && LOADED.has(d.ts.key); const p = { ...RTDEF, ...(d.rp || {}) };
+  const crumb = esc(["FILES", ...pathOf(n.parent)].join(" \\ ")) + " · reverberation time";
+  const proc = `<details class="proc" id="rtProc" ${UI.rtProcOpen || !d.dec ? "open" : ""}><summary><b>Calculation</b> · ${esc(rtSummaryTxt(p))}</summary>${rtForm(p, "r")}
+    <div class="grid"><span class="hint">${loaded ? "Signal loaded." : "The time signal is not in memory (it is not saved in the project)."} Bands are filtered with zero-phase 6th-order band-pass filters (IEC 61260 shape).</span>
+    <span class="sp" style="margin-left:auto;display:flex;gap:6px">${loaded ? "" : `<button class="btn" id="rtRelink">Load source files…</button>`}<button class="btn primary" id="rtCalc" ${loaded ? "" : "disabled"}>Calculate</button></span></div></details>`;
+  if (!d.dec){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${crumb}</div><h2>${esc(n.name)}</h2></div></div>${proc}<div class="empty">Not calculated yet.</div>`; bindRt(n); return; }
+  const F = d.F; const fits = F.map((_, j) => rtFits(d, j));
+  const T20 = fits.map(f => rtVal(f, "T20")), T30 = fits.map(f => rtVal(f, "T30")), EDT = fits.map(f => rtVal(f, "EDT"));
+  const sel = tk === "T30" ? T30 : tk === "EDT" ? EDT : T20; const mid = rtMid(F, sel);
+  if (!F.includes(UI.rtBand)) UI.rtBand = F.includes(1000) ? 1000 : F[Math.floor(F.length/2)];
+  const imp = d.mode === "impulse";
+  let h = `<div class="vh"><div class="ttl"><div class="crumb">${crumb}</div><h2>${esc(n.name)}</h2></div>
+    <div class="big"><div><div class="k">${tk} mid (500–1k Hz)</div><div class="v">${mid == null ? "—" : mid.toFixed(2)}<small>s</small></div></div>
+    ${tk !== "T30" ? `<div class="alt"><div class="k">T30 mid</div><div class="v">${rtMid(F, T30) == null ? "—" : rtMid(F, T30).toFixed(2)}<small>s</small></div></div>` : `<div class="alt"><div class="k">T20 mid</div><div class="v">${rtMid(F, T20) == null ? "—" : rtMid(F, T20).toFixed(2)}<small>s</small></div></div>`}
+    ${imp ? `<div class="alt"><div class="k">EDT mid</div><div class="v">${rtMid(F, EDT) == null ? "—" : rtMid(F, EDT).toFixed(2)}<small>s</small></div></div>` : ""}</div></div>
+    <div class="info"><div><span>Start</span><b>${fmtDate(parseStart(d.start))}</b></div><div><span>Source</span><b>${esc(d.src || "—")}</b></div><div><span>Method</span><b>${esc(RT_MODE_SHORT[d.mode] || d.mode)}</b></div><div><span>Folder</span><b>${esc(pathOf(n.parent).join(" / ") || "—")}</b></div></div>
+    ${proc}
+    <div class="ctrls"><label>Show <span class="seg" id="rtTk">${["T20", "T30", ...(imp ? ["EDT"] : [])].map(k => `<button data-t="${k}" aria-pressed="${tk === k}">${k}</button>`).join("")}</span></label>
+      <label for="rtBand">Decay of band <select id="rtBand">${F.map(f => `<option value="${f}" ${f === UI.rtBand ? "selected" : ""}>${fLabHz(f)}</option>`).join("")}</select></label>
+      <label>Time axis <span class="seg" id="rtTx"><button data-x="lin" aria-pressed="${!UI.rtLogT}">Lin</button><button data-x="log" aria-pressed="${!!UI.rtLogT}">Log</button></span></label>
+      <span class="sp" style="display:flex;gap:6px"><button class="btn primary" id="rtImg">Report image…</button><button class="btn" id="rtCopy">Copy table</button></span></div>
+    <div class="aegrid"><div class="aebox"><canvas id="rtC" aria-label="Reverberation time per band"></canvas></div><div class="aebox"><canvas id="rtD" aria-label="Decay curve"></canvas></div></div>`;
+  const q = (ok, x) => x == null ? "" : ok ? "" : "q-mid";
+  const cell = (f, k) => { const x = rtPick(f, k); if (!x) return `<td></td>`; if (!x.ok) return `<td class="q-bad" title="${esc(x.why)}">—</td>`; const ok = k === "T30" ? f.ok30 : k === "T20" ? f.ok20 : true; return `<td class="${q(ok, x.T)}" title="${ok ? "" : "dynamic range below the ISO 3382-2 requirement"}">${x.T.toFixed(2)}</td>`; };
+  const xi = (f, k) => { const x = rtPick(f, k); return x && x.ok ? `<td class="${XI_CLS(x.xi)}">${x.xi.toFixed(1)}</td>` : `<td></td>`; };
+  h += `<div class="sec-h"><h4>Results per band</h4><span class="hint">${imp ? "Backward-integrated impulse response, truncated at the noise crosspoint (Lundeby) with compensation of the cut tail. EDT: 0 to −10 dB. " : "Band level decay after switch-off; regression from −5 dB below the steady level. "}T20: −5 to −25 dB, T30: −5 to −35 dB. ξ ≤ 5 ‰ good, ≤ 10 ‰ acceptable; C = T30/T20 − 1, 0–5 % good. Amber T: dynamic range below ISO 3382-2. Click a band to see its decay.</span></div>
+    <div class="tblwrap" id="rtRes"><table class="bands" id="rtTbl"><thead><tr><th class="rh">Quantity</th>${F.map(f => `<th data-f="${f}" class="${f === UI.rtBand ? "cur" : ""}" style="cursor:pointer">${fLab(f)}</th>`).join("")}</tr></thead><tbody>
+    <tr><th class="rh">T20 [s]</th>${fits.map(f => cell(f, "T20")).join("")}</tr><tr><th class="rh">ξ20 [‰]</th>${fits.map(f => xi(f, "T20")).join("")}</tr>
+    <tr><th class="rh">T30 [s]</th>${fits.map(f => cell(f, "T30")).join("")}</tr><tr><th class="rh">ξ30 [‰]</th>${fits.map(f => xi(f, "T30")).join("")}</tr>
+    <tr><th class="rh">C [%]</th>${fits.map(f => `<td class="${C_CLS(f.C)}">${f.C == null ? "" : f.C.toFixed(1)}</td>`).join("")}</tr>
+    ${imp ? `<tr><th class="rh">EDT [s]</th>${fits.map(f => cell(f, "EDT")).join("")}</tr><tr><th class="rh">INR [dB]</th>${fits.map(f => `<td class="${f.inr == null ? "" : f.inr >= 45 ? "q-ok" : f.inr >= 35 ? "q-mid" : "q-bad"}">${f.inr == null ? "" : f.inr.toFixed(0)}</td>`).join("")}</tr>`
+      : `<tr><th class="rh">Range above floor [dB]</th>${fits.map(f => { const m = f.f30.ok ? f.f30.margin : f.f20.ok ? f.f20.margin : null; return `<td class="${m == null ? "" : m >= 10 ? "q-ok" : "q-mid"}">${m == null ? "" : m.toFixed(0)}</td>`; }).join("")}</tr>`}
+    </tbody></table></div>`;
+  v.innerHTML = h; RTV = { id: n.id, F, fits, T20, T30, EDT };
+  bindRt(n); drawRt();
+}
+function bindRt(n){
+  const box = $("#rtProc"); if (box) box.ontoggle = () => { UI.rtProcOpen = box.open; };
+  const calc = $("#rtCalc"); if (calc) calc.onclick = () => { const p = readRt($("#rtProc"), "r"); UI.lastRt = p; rtRecalc([n.id], p).then(() => renderView()); };
+  const rl = $("#rtRelink"); if (rl) rl.onclick = relink;
+  const tkb = $("#rtTk"); if (tkb) tkb.onclick = e => { const b = e.target.closest("button[data-t]"); if (!b) return; UI.rtT = b.dataset.t; renderView(); };
+  const bs = $("#rtBand"); if (bs) bs.onchange = e => { UI.rtBand = +e.target.value; UI.rtDz = null; renderView(); };
+  const tx = $("#rtTx"); if (tx) tx.onclick = e => { const b = e.target.closest("button[data-x]"); if (!b) return; UI.rtLogT = b.dataset.x === "log"; UI.rtDz = null; tx.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); drawRt(); };
+  const tb = $("#rtTbl"); if (tb) tb.onclick = e => { const th = e.target.closest("[data-f]"); if (!th) return; UI.rtBand = +th.dataset.f; UI.rtDz = null; renderView(); };
+  const cp = $("#rtCopy"); if (cp) cp.onclick = () => { const t = $("#rtTbl"); const txt = [...t.rows].map(rw => [...rw.cells].map(c => c.textContent.trim()).join("\t")).join("\n"); try { navigator.clipboard.writeText(txt).then(() => toast("Table copied — paste it into Excel"), () => toast("Select the table and copy with Ctrl+C")); } catch(e){ toast("Select the table and copy with Ctrl+C"); } };
+  const im = $("#rtImg"); if (im) im.onclick = () => rtImageDialog([n.id]);
+}
+const RT_COL = { T20: 0, T30: 2, EDT: 3 };
+function rtSeries(K, F, sets, big){
+  // sets: [{name, T20, T30, EDT}] → series for the band chart
+  const tk = UI.rtT || "T20"; const one = sets.length === 1;
+  if (one){ const s = sets[0]; const keys = ["T20", "T30", ...(s.EDT && s.EDT.some(v => v != null) ? ["EDT"] : [])];
+    return keys.map(k => ({ name: k, vals: s[k], color: K.pal[RT_COL[k]], lw: k === tk ? 2.8 : 1.4, shape: k === "T20" ? "circle" : k === "T30" ? "square" : "triangle", ms: big ? 4.6 : 3.8, dash: k === tk ? null : [5, 3] })); }
+  const ser = sets.map((s, i) => ({ name: s.name, vals: s[tk], color: K.pal[i % K.pal.length], lw: 1.2, shape: SHAPES[i % SHAPES.length], ms: big ? 4 : 3.2 }));
+  const mean = F.map((_, j) => { const a = sets.map(s => s[tk][j]).filter(v => v != null); return a.length ? a.reduce((x, y) => x + y, 0)/a.length : null; });
+  ser.push({ name: `Mean ${tk} (${sets.length})`, vals: mean, color: K.ink, lw: 3, shape: "circle", ms: big ? 4.8 : 4 });
+  return ser;
+}
+function rtYmax(ser){ const v = ser.flatMap(s => s.vals).filter(x => x != null).sort((a, b) => a - b); if (!v.length) return 1; return Math.max(0.2, niceStep(v[v.length - 1]*1.15/5)*Math.ceil(v[v.length - 1]*1.15/niceStep(v[v.length - 1]*1.15/5))); }
+function drawRt(){
+  if (!RTV || !RTV.F) return; const n = N(RTV.id); if (!n) return; const d = n.d, K = screenColors(), F = RTV.F, tk = UI.rtT || "T20";
+  let g = canvasInto("rtC");
+  if (g){ const ser = rtSeries(K, F, [{ name: n.name, T20: RTV.T20, T30: RTV.T30, EDT: RTV.EDT }], false);
+    drawBandChart(g.c, 0, 0, g.W, g.H, K, { f: F, series: ser, yLab: "Reverberation time [s]", xLab: `Frequency, ${d.rp && d.rp.bands === "1/1" ? "1/1" : "1/3"} octave band [Hz]`, head: { title: "Reverberation time", result: "" }, ymin: 0, ymax: rtYmax(ser), legendPos: "tr",
+      rows: [{ label: tk, vals: tk === "T30" ? RTV.T30 : tk === "EDT" ? RTV.EDT : RTV.T20, digits: 2, bold: true }] }); }
+  g = canvasInto("rtD");
+  if (g){ const j = F.indexOf(UI.rtBand); if (j < 0) return; const f = RTV.fits[j];
+    const rk = tk === "EDT" ? "EDT" : tk; const fit = rtPick(f, rk);
+    const curves = [{ name: d.mode === "impulse" ? "Backward-integrated decay" : "Band level", n: f.nn, dt: f.dt, get: f.get, fit, color: K.pal[0] }];
+    const geoD = drawDecay(g.c, g.W, g.H, K, { curves, T: rk === "EDT" ? "EDT" : rk, tz: UI.rtDz, logT: UI.rtLogT, title: `Decay · ${fLabHz(F[j])}` });
+    const cvD = $("#rtD");
+    if (cvD && geoD){
+      cvD.onwheel = e => { const r0 = cvD.getBoundingClientRect(); const px = e.clientX - r0.left; if (px < geoD.L || px > geoD.L + geoD.pw) return; e.preventDefault();
+        const u = (px - geoD.L)/geoD.pw; const k = e.deltaY > 0 ? 1.25 : 0.8; let a, b;
+        if (geoD.log){ const la = Math.log(geoD.tmin), lb = Math.log(geoD.tmax), lc = la + u*(lb - la); a = Math.exp(lc - (lc - la)*k); b = Math.exp(lc + (lb - lc)*k); if (b/a < 1.15) return; a = Math.max(geoD.tFirst, a); }
+        else { const tc = geoD.tmin + u*(geoD.tmax - geoD.tmin); a = tc - (tc - geoD.tmin)*k; b = tc + (geoD.tmax - tc)*k; if (b - a < 0.02) return; a = Math.max(0, a); }
+        b = Math.min(geoD.tEnd, b); UI.rtDz = (a <= geoD.tFirst + 1e-6 && b >= geoD.tEnd - 1e-6) ? null : [a, b]; drawRt(); };
+      cvD.ondblclick = () => { UI.rtDz = null; drawRt(); };
+    } }
+}
+/* several reverberation measurements (folder or selection): T per position and the arithmetic mean */
+function rtSets(ids){
+  const F = [...new Set(ids.flatMap(id => N(id).d.F || []))].sort((a, b) => a - b);
+  const sets = ids.filter(id => N(id).d.dec).map(id => { const d = N(id).d; const fits = d.F.map((_, j) => rtFits(d, j));
+    const pick = k => F.map(f => { const j = d.F.indexOf(f); return j >= 0 ? rtVal(fits[j], k) : null; });
+    return { id, name: N(id).name, T20: pick("T20"), T30: pick("T30"), EDT: pick("EDT") }; });
+  return { F, sets };
+}
+function rtSummaryHtml(ids){
+  const { F, sets } = rtSets(ids); const tk = UI.rtT === "T30" ? "T30" : "T20";
+  const mean = F.map((_, j) => { const a = sets.map(s => s[tk][j]).filter(v => v != null); return a.length ? a.reduce((x, y) => x + y, 0)/a.length : null; });
+  return `<div class="sec-h"><h4>Reverberation time (${ids.length})</h4><span class="hint">Arithmetic mean of the positions (ISO 3382-2). Click a row to open it.</span><span class="sp" style="display:flex;gap:6px"><span class="seg" id="rtSumTk">${["T20", "T30"].map(k => `<button data-t="${k}" aria-pressed="${tk === k}">${k}</button>`).join("")}</span><button class="btn primary" id="rtSumImg">Report image…</button><button class="btn" id="rtSumCopy">Copy table</button></span></div>
+  <div class="aebox wide"><canvas id="rtSum" aria-label="Reverberation time of the positions"></canvas></div>
+  <div class="tblwrap"><table class="bands" id="rtSumT"><thead><tr><th class="rh">${tk} [s]</th>${F.map(f => `<th>${fLab(f)}</th>`).join("")}<th>mid</th></tr></thead><tbody>
+  ${sets.map((s, i) => `<tr data-id="${s.id}" style="cursor:pointer"><th class="rh">${markerSvg(SHAPES[i % SHAPES.length], `var(--s${(i % 10) + 1})`)} ${esc(s.name)}</th>${s[tk].map(v => `<td>${v == null ? "" : v.toFixed(2)}</td>`).join("")}<td>${rtMid(F, s[tk]) == null ? "" : rtMid(F, s[tk]).toFixed(2)}</td></tr>`).join("")}
+  <tr class="meanrow"><th class="rh">Mean ${tk} (${sets.length})</th>${mean.map(v => `<td>${v == null ? "" : v.toFixed(2)}</td>`).join("")}<td>${rtMid(F, mean) == null ? "" : rtMid(F, mean).toFixed(2)}</td></tr>
+  </tbody></table></div>`;
+}
+function bindRtSummary(ids){
+  const t = $("#rtSumT"); if (!t) return;
+  t.onclick = e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; const id = tr.dataset.id; UI.sel = new Set([id]); UI.active = id; let p = N(id).parent; while (p){ N(p).open = true; p = N(p).parent; } persist(); renderTree(); renderView(); };
+  $("#rtSumTk").onclick = e => { const b = e.target.closest("button[data-t]"); if (!b) return; UI.rtT = b.dataset.t; renderView(); };
+  $("#rtSumCopy").onclick = () => { const txt = [...t.rows].map(rw => [...rw.cells].map(c => c.textContent.trim()).join("\t")).join("\n"); try { navigator.clipboard.writeText(txt).then(() => toast("Table copied"), () => toast("Select the table and copy with Ctrl+C")); } catch(e){ toast("Select the table and copy with Ctrl+C"); } };
+  $("#rtSumImg").onclick = () => rtImageDialog(ids);
+  const draw = () => { const g = canvasInto("rtSum"); if (!g) return; const K = screenColors(); const { F, sets } = rtSets(ids); const ser = rtSeries(K, F, sets, false); const tk = UI.rtT === "T30" ? "T30" : "T20";
+    drawBandChart(g.c, 0, 0, g.W, g.H, K, { f: F, series: ser, yLab: `${tk} [s]`, xLab: "Frequency band [Hz]", head: { title: `Reverberation time ${tk}`, result: "" }, ymin: 0, ymax: rtYmax(ser), legendPos: "tr" }); };
+  draw(); RTSUM = draw;
+}
+function rtReportCanvas(ids, size){
+  const [W, H] = size === "1200x700" ? [1200, 700] : size === "2000x1100" ? [2000, 1100] : [1600, 900];
+  const sc = W/760; const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"); const K = REPORT_COLORS;
+  c.fillStyle = "#fff"; c.fillRect(0, 0, W, H);
+  const { F, sets } = rtSets(ids); const tk = UI.rtT || "T20"; const ser = rtSeries(K, F, sets, true);
+  const vals = sets.length === 1 ? sets[0][tk] : ser.at(-1).vals; const mid = rtMid(F, vals);
+  const one = sets.length === 1; const d0 = N(ids[0]).d;
+  const par = [...new Set(ids.map(id => N(id).parent))]; const title = one ? N(ids[0]).name : par.length === 1 ? (pathOf(par[0]).at(-1) || "Reverberation time") : "Reverberation time";
+  drawBandChart(c, 24*sc, 16*sc, W - 48*sc, H - 32*sc, K, { f: F, series: ser, scale: sc, yLab: "Reverberation time [s]", xLab: `Frequency, ${d0.rp && d0.rp.bands === "1/1" ? "1/1" : "1/3"} octave band [Hz]`, ymin: 0, ymax: rtYmax(ser), legendPos: "tr",
+    head: { kicker: "Reverberation time · ISO 3382-2", title, sub: one ? `${RT_MODE_SHORT[d0.mode] || ""}` : `${sets.length} positions · arithmetic mean`, result: mid == null ? "" : `${tk},mid = ${mid.toFixed(2)} s` },
+    rows: [{ label: one ? `${tk} [s]` : `Mean ${tk}`, vals, digits: 2, bold: true }] });
+  return cv;
+}
+function rtImageDialog(ids){
+  const b = document.createElement("div"); b.style.display = "contents";
+  b.innerHTML = `<div class="opts"><label for="riSize">Size <select id="riSize"><option>1600x900</option><option>1200x700</option><option>2000x1100</option></select></label></div><img class="prev" id="riPrev" alt="Reverberation time chart preview">`;
+  let cv; const build = () => { cv = rtReportCanvas(ids, b.querySelector("#riSize").value); b.querySelector("#riPrev").src = cv.toDataURL("image/png"); };
+  b.addEventListener("change", build);
+  const name = ids.length === 1 ? N(ids[0]).name : (pathOf(N(ids[0]).parent).at(-1) || "reverberation");
+  modal("Reverberation time chart for the report", b, [
+    { label: "Close" },
+    { label: "Copy image", run: () => { try { const pr = new Promise(res => cv.toBlob(res, "image/png")); navigator.clipboard.write([new ClipboardItem({ "image/png": pr })]).then(() => toast("Image copied — paste it into Word"), () => toast("This view doesn't allow copying images. Use Save PNG.")); } catch(e){ toast("This view doesn't allow copying images. Use Save PNG."); } return false; } },
+    { label: "Save PNG", primary: true, run: () => { cv.toBlob(bl => saveWithPicker(safeName(name) + "_" + (UI.rtT || "T20") + ".png", bl, "PNG image", "image/png", ".png"), "image/png"); return false; } },
+  ], true);
+  (document.fonts?.ready || Promise.resolve()).then(build); build();
+}
+
 /* ---------- toast ---------- */
 let toastT;
 function toast(msg, act, fn){
@@ -2791,7 +3097,7 @@ $("#fUnv").onchange = e => { const fs = [...e.target.files]; if (fs.length) reli
     sp.addEventListener("pointermove", mv); sp.addEventListener("pointerup", up); });
 })();
 
-new ResizeObserver(() => { drawChart(); drawTime(); drawAe(); if (AESUM) AESUM(); }).observe(document.body);
+new ResizeObserver(() => { drawChart(); drawTime(); drawAe(); if (AESUM) AESUM(); drawRt(); if (RTSUM) RTSUM(); }).observe(document.body);
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => renderView());
 new MutationObserver(() => renderView()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 document.fonts?.ready?.then(() => drawChart());
