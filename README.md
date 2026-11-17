@@ -46,6 +46,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 1.5 | 17/11/2026 | Ruido de fondo = media energética de cualquier otra carpeta, también sobre una medida individual (línea discontinua gris y diferencia al fondo). |
 | 1.4 | 17/11/2026 | Comparación por medias energéticas de carpetas (selección de varias carpetas o subcarpetas de una carpeta); opción «solo la media»; curva de ruido de fondo sombreada con diferencia al fondo en el cursor. |
 | 1.3 | 17/11/2026 | Tiempo de reverberación (ISO 3382-2) desde señales UNV: respuesta impulsiva (integración inversa de Schroeder, truncado de Lundeby) o ruido interrumpido; T20, T30, EDT, ξ, C, INR; media de posiciones e imagen de informe. |
 | 1.2 | 15/11/2026 | La versión instalada funciona totalmente sin internet: la librería de Excel (SheetJS) y las fuentes van incluidas en el repositorio y se guardan al instalar. |
