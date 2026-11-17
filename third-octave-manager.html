@@ -245,7 +245,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.4 · 17 Nov 2026">v2.4</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.5 · 17 Nov 2026">v2.5</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -593,7 +593,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "2.4";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "2.5";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -982,6 +982,7 @@ function menuFor(id, x, y){
       ...(nm > 1 ? [{ label: `Compare ${nm} measurements`, run: () => { UI.active = id; renderView(); UI.grp = "meas"; renderView(); } }] : []),
       ...(ids.filter(i => N(i).t === "f").length > 1 ? [{ label: "Compare folder means", run: () => { UI.active = id; renderView(); UI.grp = "folders"; renderView(); } }] : []),
       { label: "Report image…", run: () => { UI.active = id; renderView(); reportDialog(); } },
+      ...(UI.repClip && ids.some(i => N(i).t === "f") ? [{ label: `Paste print settings to ${ids.filter(i => N(i).t === "f").length} folders (from “${UI.repClip.from}”)`, run: () => { const c = pasteRep(ids.filter(i => N(i).t === "f"), UI.repClip.rep); toast(`Print settings applied to ${c} folders`); } }] : []),
       { label: "Group into new folder", run: () => groupInFolder(ids) },
       { label: "Move to…", run: () => moveDialog(ids) },
       { label: "Cut", k: "Ctrl+X", run: () => cut(ids) },
@@ -1007,6 +1008,9 @@ function menuFor(id, x, y){
       { label: "Sort by name", run: () => sortFolder(id, "name") },
       { label: "Sort by time", run: () => sortFolder(id, "time") },
       { label: "Report image…", run: () => { renderView(); reportDialog(); } },
+      ...(n.rep ? [{ label: "Copy print settings", run: () => { UI.repClip = { from: n.name, rep: repPortable(n.rep) }; toast(`Print settings of “${n.name}” copied`); } }] : []),
+      ...(UI.repClip ? [{ label: `Paste print settings (from “${UI.repClip.from}”)`, run: () => { pasteRep([id], UI.repClip.rep); toast(`Print settings applied to “${n.name}”`); } },
+        ...(n.kids.some(k => N(k).t === "f") ? [{ label: "Paste print settings here and in subfolders", run: () => { const c = pasteRep(foldersDeep(id), UI.repClip.rep); toast(`Print settings applied to ${c} folders`); } }] : [])] : []),
       { label: "Export to Excel", run: () => exportXlsx([id]) },
       "-",
       { label: "Delete folder", k: "Del", danger: true, run: () => deleteNodes([id]) },
@@ -1870,6 +1874,14 @@ function reportCfg(over = {}){
     footer: `${single ? "Folder: " + (pathOf(n0.parent).join(" / ") || "—") + " · " : ""}Start ${fmtDate(t0)}${src ? " · Source: " + src : ""}`,
   }, over);
 }
+/* print settings travel between folders: everything except the folder's own details line */
+const repPortable = r => { if (!r) return null; const o = JSON.parse(JSON.stringify(r)); delete o.sub; delete o.subEdited; delete o.all; delete o.sameY; return o; };
+function pasteRep(targets, src){
+  const r = repPortable(src); if (!r) return 0; let n = 0;
+  commit(() => { for (const id of targets){ const f = N(id); if (!f || f.t !== "f") continue; const own = f.rep || {}; f.rep = { ...r, ...(own.subEdited ? { sub: own.sub, subEdited: true } : {}) }; n++; } });
+  return n;
+}
+const foldersDeep = id => { const out = []; (function w(x){ const n = N(x); if (n && n.t === "f"){ if (x !== "root") out.push(x); n.kids.forEach(w); } })(id); return out; };
 function reportDialog(){
   if (!VIEW){ toast("Select a measurement or folder first"); return; }
   // print settings: saved with the folder (shared by its measurements); a folder without its own starts from the last ones used
@@ -1884,6 +1896,7 @@ function reportDialog(){
   b.innerHTML = `<div class="repgrid">
     <div class="repctl">
       <div class="hint" style="margin:-2px 0 2px">${key ? `Settings saved with “${esc(N(key).name)}”${saved ? "" : " (first time: starting from the last ones used)"}.` : "Selection: settings kept for this session only."} <a href="#" id="rReset">Reset</a></div>
+      ${(() => { const fs = Object.values(S.nodes).filter(f => f.t === "f" && f.rep && f.id !== key); return fs.length ? `<label for="rFrom" style="color:var(--muted)">Same as folder <select id="rFrom"><option value="">—</option>${fs.map(f => `<option value="${f.id}">${esc(pathOf(f.id).join(" / "))}</option>`).join("")}</select></label>` : ""; })()}
       <div class="sec-h"><h4>Size</h4><span class="hint" id="rDpi"></span></div>
       <div class="opts">
         <label for="rAsp">Shape <select id="rAsp">${Object.keys(REPORT_ASPECT).map(k => `<option value="${k}" ${k === st.aspect ? "selected" : ""}>${{ "16:9": "16:9 wide", "3:2": "3:2", "4:3": "4:3", "1:1": "1:1 square", "3:4": "3:4 portrait" }[k]}</option>`).join("")}<option value="custom" ${st.aspect === "custom" ? "selected" : ""}>Custom…</option></select></label>
@@ -1927,7 +1940,9 @@ function reportDialog(){
     if (st.subEdited) cfg.subtitle = st.sub;
     return cfg;
   };
+  let gone = false;
   const build = e => {
+    if (gone || (e && e.target && e.target.id === "rFrom")) return;   // "Same as folder" reopens the dialog with the other folder's settings
     st.aspect = g("rAsp").value; st.width = +g("rW").value; st.cw = +g("rCw").value; st.ch = +g("rCh").value;
     b.querySelectorAll(".rstd").forEach(x => x.style.display = st.aspect === "custom" ? "none" : ""); b.querySelectorAll(".rcus").forEach(x => x.style.display = st.aspect === "custom" ? "" : "none");
     st.cursor = on("rCur", true); st.footer = on("rFoot", true); st.rows = on("rRows", true); st.fn = +g("rFn").value || 1; st.ft = +g("rFt").value || 1;
@@ -1943,6 +1958,9 @@ function reportDialog(){
   let repT = null;
   const saveRep = () => { reportDialog.state = JSON.parse(JSON.stringify(st)); if (!key || !N(key)) return; const js = JSON.stringify(st); if (JSON.stringify(N(key).rep || null) === js) return; N(key).rep = JSON.parse(js); setDirty(true); clearTimeout(repT); repT = setTimeout(persist, 800); };
   b.addEventListener("input", build); b.addEventListener("change", build);
+  setTimeout(() => { const fr = b.querySelector("#rFrom"); if (fr) fr.onchange = ev => { ev.stopPropagation(); const src = N(fr.value); if (!src || !src.rep) return; gone = true; const r = repPortable(src.rep);
+      if (key && N(key)){ const own = N(key).rep || {}; N(key).rep = { ...r, ...(own.subEdited ? { sub: own.sub, subEdited: true } : {}) }; setDirty(true); persist(); } else reportDialog.state = r;
+      document.querySelector(".dlg .btn:not(.primary)")?.click(); setTimeout(reportDialog, 50); toast(`Print settings taken from “${src.name}”`); }; }, 0);
   setTimeout(() => { const rr = b.querySelector("#rReset"); if (rr) rr.onclick = ev => { ev.preventDefault(); if (key && N(key)) delete N(key).rep; reportDialog.state = null; setDirty(true); persist(); document.querySelector(".dlg .btn:not(.primary)")?.click(); setTimeout(reportDialog, 50); }; }, 0);
   const fname = () => safeName(g("rTitle").value || VIEW.title) + "_" + safeName(isTot(UI.cursor) ? UI.cursor + "total" : fLab(UI.cursor) + "Hz") + ".png";
   modal("Report image", b, [

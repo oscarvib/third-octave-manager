@@ -48,6 +48,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.5 | 17/11/2026 | Copiar los parámetros de impresión de una carpeta a otras: «Same as folder» en la ventana de imagen, o clic derecho → Copy / Paste print settings (también a subcarpetas o a varias carpetas seleccionadas). La línea de detalle de cada carpeta se conserva. |
 | 2.4 | 17/11/2026 | El fondo se rotula solo «BACKGROUND», también con curva de ponderación. |
 | 2.3 | 17/11/2026 | La curva de ruido de fondo se rotula «BACKGROUND» en gráficas, tablas, cursor e informes (su origen queda en la tabla y en el texto emergente). |
 | 2.2 | 17/11/2026 | Tamaño ajustable de los números y de los títulos de los ejes en las imágenes de informe (80–200 %), guardado por carpeta. |
