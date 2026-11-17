@@ -48,6 +48,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 1.9 | 17/11/2026 | La curva de ponderación de usuario no se aplica al ruido de fondo (se muestra «unweighted»). |
 | 1.8 | 17/11/2026 | Al editar curvas límite o de ponderación, los valores aparecen en dos columnas (frecuencia, valor) y la vista previa muestra la frecuencia de cada punto. |
 | 1.7 | 17/11/2026 | Curvas de ponderación de usuario (tercios, octavas o puntos) como elementos editables del árbol; se aplican a todas las medidas de una carpeta (bandas, banda estrecha y totales). |
 | 1.6 | 17/11/2026 | Curvas límite de cliente (tercios, octavas o banda estrecha) guardadas en carpetas: se pegan desde Excel (columna, fila o pares frecuencia-valor) en dB o en unidades lineales; se dibujan sobre los espectros, con margen en el cursor y bandas que superan el límite en rojo. |

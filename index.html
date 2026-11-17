@@ -244,7 +244,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 <script>if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.8 · 17 Nov 2026">v1.8</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.9 · 17 Nov 2026">v1.9</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -592,7 +592,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "1.8";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "1.9";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -667,7 +667,9 @@ function qConv(d, metric){
   return c;
 }
 /* user weighting curve (tree item): gain in dB, interpolated on log frequency between its points; outside its range: end values held, or excluded */
-const cwNode = () => { const n = UI.cw && N(UI.cw); return n && n.d && n.d.kind === "weight" ? n : null; };
+let CW_OFF = false;   // the background is never weighted by the user curve
+const cwNode = () => { if (CW_OFF) return null; const n = UI.cw && N(UI.cw); return n && n.d && n.d.kind === "weight" ? n : null; };
+const noCw = fn => { CW_OFF = true; try { return fn(); } finally { CW_OFF = false; } };
 function cwVal(d, f){
   const F = d.span === "nb" ? d.f : d.f.map(exactF), V = d.v; if (!F.length) return 0;
   const e = d.span === "nb" ? 1.0001 : Math.pow(10, (d.span === "1/1" ? 3 : 1)/20);
@@ -1253,10 +1255,16 @@ function buildView(){
   } else series = ms.map(mkSer);
   if (UI.bgId && !series.some(s => s.id === UI.bgId) && N(UI.bgId) && N(UI.bgId).t === "f"){   // background = energetic mean of another folder
     const bms = measUnder(UI.bgId).filter(id => { const d = N(id).d; return d.kind !== "ae" && d.kind !== "rt" && d.m && d.m[UI.metric]; });
-    if (bms.length){ const a = aggSeries(bms.map((id, k) => mkSer(N(id), k)));
+    if (bms.length){ const a = aggSeries(noCw(() => bms.map((id, k) => mkSer(N(id), k))));
       series.push({ ...a, id: UI.bgId, name: `${N(UI.bgId).name} · mean of ${bms.length}`, group: true, external: true, nMeas: bms.length, ci: series.length, shape: "diamond", hidden: false }); }
   }
-  for (const s of series){ if (s.id === UI.bgId){ s.bg = true; s.color = "var(--muted)"; } }
+  const bi = series.findIndex(s => s.id === UI.bgId && !s.external);
+  if (bi >= 0 && UI.cw){   // a curve of this view used as background: rebuilt without the weighting curve
+    const s0 = series[bi], g = groups && groups.find(x => x.id === s0.id);
+    const raw = noCw(() => g && s0.group ? { ...aggSeries(g.ms.map((id, k) => mkSer(N(id), k))) } : mkSer(N(s0.id), s0.ci));
+    series[bi] = { ...s0, vals: raw.vals, tot: raw.tot, nb: raw.nb, nbdf: raw.nbdf, qoff: raw.qoff, lk: raw.lk };
+  }
+  for (const s of series){ if (s.id === UI.bgId){ s.bg = true; s.color = "var(--muted)"; if (UI.cw) s.name += " · unweighted"; } }
   let title = ctx.title, crumb = ctx.crumb; const grouped = !!(groups && groups.length > 1);
   if (grouped && !title) title = `${series.length} folders · energetic means`;
   if (!title) title = U.sameName ? U.sameName : `${ms.length} measurements selected`;
