@@ -48,6 +48,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.1 | 17/11/2026 | Los parámetros de impresión (tamaño, cabecera, línea de detalle, leyenda) se guardan por carpeta, dentro del proyecto. |
 | 2.0 | 17/11/2026 | Imágenes de informe: formatos 16:9, 3:2, 4:3, cuadrado, vertical o a medida, de 1200 a 3000 px (con tamaño a 300 dpi); cabecera con partes activables y título y línea de detalle editables; leyenda a la derecha, debajo o sin ella, con elementos activables. Formatos cuadrados también en reverberación y aislamiento. |
 | 1.9 | 17/11/2026 | La curva de ponderación de usuario no se aplica al ruido de fondo (se muestra «unweighted»). |
 | 1.8 | 17/11/2026 | Al editar curvas límite o de ponderación, los valores aparecen en dos columnas (frecuencia, valor) y la vista previa muestra la frecuencia de cada punto. |
