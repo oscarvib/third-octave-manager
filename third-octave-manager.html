@@ -245,7 +245,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.1 · 17 Nov 2026">v2.1</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.2 · 17 Nov 2026">v2.2</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -593,7 +593,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "2.1";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "2.2";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -1536,6 +1536,8 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   const tk = VIEW.drawKeys;
   const col = s => serColor(K, s);
   const sc = o.scale || 1; const fpx = n => `${n*sc*FS}px`;
+  const fn = o.fn || 1, ft = o.ft || 1;   // report: size of the axis numbers and of the axis titles
+  const fpN = n => `${n*sc*FS*fn}px`, fpT = n => `${n*sc*FS*ft}px`;
   const mode = viewMode(); const M = single ? null : VIEW.mean;
   const stp = VIEW.bk === "1/1" ? 3 : 1; const ef = Math.pow(10, stp/20);
   const lin = yLin();
@@ -1559,7 +1561,7 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   if (lin){ const mx = Math.max(...all) || 1; const st0 = niceStep(mx*1.08/5); lo = UI.yMin ?? 0; hi = UI.yMax ?? Math.ceil(mx*1.08/st0)*st0; }
   else { lo = UI.yMin ?? Math.floor((Math.min(...all) - 2)/10)*10; hi = UI.yMax ?? Math.ceil((Math.max(...all) + 4)/10)*10; }
   if (!(hi > lo)) hi = lo + (lin ? 1 : 10);
-  const L = X + (lin ? 74 : 62)*sc, R = 10*sc, Tp = Y + 38*sc; const pw = X + Wd - R - L;
+  const L = X + ((lin ? 74 : 62) + (fn - 1)*38 + (ft - 1)*15)*sc, R = 10*sc, Tp = Y + 38*sc; const pw = X + Wd - R - L;
   const tslot = tk.length ? (single ? Math.max(26*sc, pw*0.034) : Math.max(38*sc, pw*0.05)) : 0;
   const gapP = tk.length ? tslot*0.6 : 0;
   const BW = pw - gapP - tk.length*tslot;
@@ -1568,7 +1570,8 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   const visK = fs.map((_, k) => k).filter(k => fs[k]*ef > Z0 && fs[k]/ef < Z1);
   const bandPx = visK.length ? BW/((Math.log(Z1) - Math.log(Z0))/Math.log(ef*ef)) : 0;
   const rows = (o.rows || []).filter(() => bandPx >= 40*sc && mode !== "nb");
-  const B = (52 + rows.length*19 + (rows.length ? 4 : 0))*sc; const ph = Y + Ht - B - Tp;
+  const xNumH = 14*fn, xTitH = 14*ft;
+  const B = (24 + xNumH + xTitH + rows.length*19*fn + (rows.length ? 4 : 0))*sc; const ph = Y + Ht - B - Tp;
   const xF = f => L + (Math.log(f) - lZ0)/lZ*BW;
   const fX = x => Math.exp(lZ0 + (x - L)/BW*lZ);
   const tX = t => L + BW + gapP + t*tslot;
@@ -1576,14 +1579,14 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   const base = y(lo);
   const step = lin ? niceStep((hi - lo)/6) : ((hi - lo) > 80 ? 20 : (hi - lo) > 30 ? 10 : (hi - lo) > 12 ? 5 : 2);
   c.save();
-  c.font = `${fpx(11)} ${K.mono}`; c.textBaseline = "middle"; c.textAlign = "right"; c.lineWidth = sc;
+  c.font = `${fpN(11)} ${K.mono}`; c.textBaseline = "middle"; c.textAlign = "right"; c.lineWidth = sc;
   c.strokeStyle = K.line; c.fillStyle = K.muted;
   // Leq column sits on a faint panel of its own
   if (tk.length){ c.fillStyle = K.line; c.globalAlpha = .28; c.fillRect(L + BW + gapP*0.5, Tp, pw - BW - gapP*0.5, ph); c.globalAlpha = 1; }
   c.fillStyle = K.muted; c.strokeStyle = K.line;
   for (let v = Math.ceil(lo/step - 1e-9)*step; v <= hi + step*1e-6; v += step){ const yy = Math.round(y(v)) + .5; c.beginPath(); c.moveTo(L, yy); c.lineTo(L + pw, yy); c.stroke(); c.fillText(fmtTick(v, step), L - 7*sc, yy); }
   const yLabTxt = lin ? `${mLabel(UI.metric, UI.W, VIEW.hasW)}  [${VIEW.linUnit} RMS]` : `${single || ser.length ? mLabel(UI.metric, UI.W, VIEW.hasW) : "Level"}  [${VIEW.yLab}]`;
-  c.save(); c.translate(X + 14*sc, Tp + ph/2); c.rotate(-Math.PI/2); c.font = `${fpx(11.5)} ${K.sans}`; c.fillStyle = K.muted; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(yLabTxt, 0, 0); c.restore();
+  c.save(); c.translate(X + 14*sc*ft, Tp + ph/2); c.rotate(-Math.PI/2); c.font = `${fpT(11.5)} ${K.sans}`; c.fillStyle = K.muted; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(yLabTxt, 0, 0); c.restore();
   const ylEnd = L;
   // frequency ticks (log axis): octave centres always, third-octave centres when there is room, finer when zoomed in
   c.textAlign = "center"; c.textBaseline = "top";
@@ -1601,12 +1604,12 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   }
   if (tk.length){
     const xs = L + BW + gapP/2; c.strokeStyle = K.line; c.setLineDash([2*sc, 3*sc]); c.beginPath(); c.moveTo(Math.round(xs) + .5, Tp); c.lineTo(Math.round(xs) + .5, Tp + ph); c.stroke(); c.setLineDash([]);
-    c.font = `600 ${fpx(11)} ${K.mono}`;
+    c.font = `600 ${fpN(11)} ${K.mono}`;
     tk.forEach((k, t) => { c.fillStyle = UI.cursor === k ? K.cur : K.ink; c.fillText(single ? (k === "raw" ? "Σ" : k) : (k === "raw" ? mLabel(UI.metric, "raw", false) : mLabel(UI.metric, k, VIEW.hasW)), tX(t) + tslot/2, Tp + ph + 7*sc); });
   }
-  c.font = `${fpx(11)} ${K.sans}`; c.fillStyle = K.muted; c.textAlign = "center";
+  c.font = `${fpT(11)} ${K.sans}`; c.fillStyle = K.muted; c.textAlign = "center";
   const zoomed = zoomedNow;
-  c.fillText((mode === "nb" ? "Frequency [Hz] · narrowband" : mode === "both" ? VIEW.bandAxis + " + narrowband" : VIEW.bandAxis) + (zoomed ? `  ·  zoom ${fmtTickF(Z0)}–${fmtTickF(Z1)} Hz` : ""), L + BW/2, Tp + ph + 30*sc);
+  c.fillText((mode === "nb" ? "Frequency [Hz] · narrowband" : mode === "both" ? VIEW.bandAxis + " + narrowband" : VIEW.bandAxis) + (zoomed ? `  ·  zoom ${fmtTickF(Z0)}–${fmtTickF(Z1)} Hz` : ""), L + BW/2, Tp + ph + (12 + xNumH + 4)*sc);
   const G = { xF, Z0, Z1, L, BW, Tp, ph, y, T };
   const bx = k => [Math.max(L, xF(fs[k]/ef)), Math.min(L + BW, xF(fs[k]*ef))];
   const mk = (s, x, yy, color, big) => drawMarker(c, s.shape, x, yy, (big ? 3.9 : 3.3)*sc, K.panel, color, (big ? 2 : 1.5)*sc);
@@ -1684,13 +1687,13 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
       c.fillStyle = K.cur; c.textAlign = "left"; c.textBaseline = "middle"; c.fillText(txt, tx, py + ph2/2 + .5*sc);
     }
   }
-  let ry = Tp + ph + 50*sc;
+  let ry = Tp + ph + (16 + xNumH + xTitH + 6)*sc;
   for (const rw of rows){
-    c.textBaseline = "top"; c.textAlign = "right"; c.fillStyle = K.muted; c.font = `${fpx(10.5)} ${K.sans}`; c.fillText(rw.label, L - 7*sc, ry);
-    c.textAlign = "center"; c.font = `${rw.bold ? "600 " : ""}${fpx(10.5)} ${K.mono}`; c.fillStyle = rw.color || K.ink;
+    c.textBaseline = "top"; c.textAlign = "right"; c.fillStyle = K.muted; c.font = `${fpN(10.5)} ${K.sans}`; c.fillText(rw.label, L - 7*sc, ry);
+    c.textAlign = "center"; c.font = `${rw.bold ? "600 " : ""}${fpN(10.5)} ${K.mono}`; c.fillStyle = rw.color || K.ink;
     idx.forEach((i, k) => { const v = rw.s.vals[i]; const xc = xF(fs[k]); if (v == null || !inX(xc)) return; c.fillText(lin ? fmtLin(T(v, rw.s)) : v.toFixed(1), xc, ry); });
-    tk.forEach((kk, t) => { const v = rw.s.tot[kk]; if (v == null) return; c.font = `600 ${fpx(10.5)} ${K.mono}`; c.fillText(lin ? fmtLin(T(v, rw.s)) : v.toFixed(1), tX(t) + tslot/2, ry); });
-    ry += 19*sc;
+    tk.forEach((kk, t) => { const v = rw.s.tot[kk]; if (v == null) return; c.font = `600 ${fpN(10.5)} ${K.mono}`; c.fillText(lin ? fmtLin(T(v, rw.s)) : v.toFixed(1), tX(t) + tslot/2, ry); });
+    ry += 19*sc*fn;
   }
   if (o.corner !== false){
     c.font = `${fpx(10.5)} ${K.mono}`; c.fillStyle = K.muted; c.textAlign = "right"; c.textBaseline = "middle";
@@ -1818,7 +1821,7 @@ function renderReport(cfg){
   const bottom = bottom0 - legH;
   const chartW = Wd - 2*pad - (legW ? legW + 16*sc : 0);
   const rowSrc = single ? VIEW.series[0] : VIEW.mean;
-  cv.geo = drawSpectrum(c, pad - 10*sc, top, chartW + 10*sc, bottom - top, K, { scale: sc, cursor: cfg.cursor, corner: false, rows: cfg.rows !== false && rowSrc ? [{ label: single ? mLabel(UI.metric, UI.W, VIEW.hasW) : "Mean", s: rowSrc, bold: true }] : [] });
+  cv.geo = drawSpectrum(c, pad - 10*sc, top, chartW + 10*sc, bottom - top, K, { scale: sc, fn: cfg.fn || 1, ft: cfg.ft || 1, cursor: cfg.cursor, corner: false, rows: cfg.rows !== false && rowSrc ? [{ label: single ? mLabel(UI.metric, UI.W, VIEW.hasW) : "Mean", s: rowSrc, bold: true }] : [] });
   const drawRow = (r, lx, ly, w) => {
     if (r.color) drawMarker(c, r.shape, lx + 5*sc, ly + rowH/2, (r.bold ? 5.2 : 4.6)*sc, K.bg, r.color, (r.bold ? 2.4 : 1.7)*sc);
     c.fillStyle = r.hl ? K.cur : K.ink; c.font = `${r.hl || r.bold ? "600 " : ""}${12.5*sc*FS}px ${K.sans}`; c.textAlign = "left"; c.textBaseline = "middle";
@@ -1897,6 +1900,10 @@ function reportDialog(){
         ${ck("lH", st.lg.head, "Heading and cursor frequency")}${ck("lV", st.lg.values, "Values")}${!single ? ck("lC", st.lg.curves, "One row per curve") : ""}${!single && VIEW.mean ? ck("lM", st.lg.mean, "Mean") : ""}${VIEW.series.some(s => s.bg) ? ck("lB", st.lg.bg, "Background") : ""}${VIEW.lims && VIEW.lims.length ? ck("lL", st.lg.lims, "Limits") : ""}${ck("lU", st.lg.units, "Units note")}
       </div>
       <div class="sec-h"><h4>Chart</h4></div>
+      <div class="opts">
+        <label for="rFn">Axis numbers <select id="rFn">${[0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map(v => `<option value="${v}" ${Math.abs(v - (st.fn || 1)) < 1e-6 ? "selected" : ""}>${Math.round(v*100)} %</option>`).join("")}</select></label>
+        <label for="rFt">Axis titles <select id="rFt">${[0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map(v => `<option value="${v}" ${Math.abs(v - (st.ft || 1)) < 1e-6 ? "selected" : ""}>${Math.round(v*100)} %</option>`).join("")}</select></label>
+      </div>
       <div class="opts">${ck("rCur", st.cursor, `Cursor (${esc(curLabel())})`)}${ck("rRows", st.rows !== false, "Values under the axis (when they fit)")}${ck("rFoot", st.footer, "Footer with time and source")}</div>
     </div>
     <div class="repprev"><img class="prev" id="rPrev" alt="Report image preview"><div class="hint">Move the cursor on the spectrum (band or A/C/Z total) before opening this, and hide rows in the measurement list to leave them out.</div></div>
@@ -1916,14 +1923,14 @@ function reportDialog(){
     const [W, H] = wh();
     const cfg = reportCfg({ W, H, title: title || VIEW.title, cursor: st.cursor, legend: st.legend });
     if (!st.cursor){ cfg.legendHead = VIEW.kind === "single" ? "Totals" : "Measurements"; cfg.legendSub = VIEW.kind === "single" ? "" : `${mLabel(UI.metric, VIEW.drawKeys[0], VIEW.hasW)} total`; if (VIEW.kind === "single") cfg.singleRows = cfg.singleRows.filter(r => / total$/.test(r.name) || r.kind === "bg"); }
-    if (!st.footer) cfg.footer = ""; cfg.rows = st.rows; cfg.hd = { ...st.hd }; cfg.lg = { ...st.lg };
+    if (!st.footer) cfg.footer = ""; cfg.rows = st.rows; cfg.hd = { ...st.hd }; cfg.lg = { ...st.lg }; cfg.fn = st.fn || 1; cfg.ft = st.ft || 1;
     if (st.subEdited) cfg.subtitle = st.sub;
     return cfg;
   };
   const build = e => {
     st.aspect = g("rAsp").value; st.width = +g("rW").value; st.cw = +g("rCw").value; st.ch = +g("rCh").value;
     b.querySelectorAll(".rstd").forEach(x => x.style.display = st.aspect === "custom" ? "none" : ""); b.querySelectorAll(".rcus").forEach(x => x.style.display = st.aspect === "custom" ? "" : "none");
-    st.cursor = on("rCur", true); st.footer = on("rFoot", true); st.rows = on("rRows", true);
+    st.cursor = on("rCur", true); st.footer = on("rFoot", true); st.rows = on("rRows", true); st.fn = +g("rFn").value || 1; st.ft = +g("rFt").value || 1;
     st.hd = { kicker: on("hK", true), title: on("hT", true), result: on("hR", true), subtitle: on("hS", true) };
     const lp = g("rLpos").value; st.legend = lp !== "none";
     st.lg = { pos: lp === "none" ? st.lg.pos : lp, head: on("lH", true), values: on("lV", true), curves: on("lC", st.lg.curves), mean: on("lM", st.lg.mean), bg: on("lB", st.lg.bg), lims: on("lL", st.lg.lims), units: on("lU", true) };

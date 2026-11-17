@@ -48,6 +48,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.2 | 17/11/2026 | Tamaño ajustable de los números y de los títulos de los ejes en las imágenes de informe (80–200 %), guardado por carpeta. |
 | 2.1 | 17/11/2026 | Los parámetros de impresión (tamaño, cabecera, línea de detalle, leyenda) se guardan por carpeta, dentro del proyecto. |
 | 2.0 | 17/11/2026 | Imágenes de informe: formatos 16:9, 3:2, 4:3, cuadrado, vertical o a medida, de 1200 a 3000 px (con tamaño a 300 dpi); cabecera con partes activables y título y línea de detalle editables; leyenda a la derecha, debajo o sin ella, con elementos activables. Formatos cuadrados también en reverberación y aislamiento. |
 | 1.9 | 17/11/2026 | La curva de ponderación de usuario no se aplica al ruido de fondo (se muestra «unweighted»). |
