@@ -242,7 +242,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.6 · 17 Nov 2026">v1.6</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 1.7 · 17 Nov 2026">v1.7</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -590,7 +590,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "1.6";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "1.7";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -654,13 +654,27 @@ function wmA(f){
 }
 const wmDb = (q, f) => 20*Math.log10(q === "vel" ? wmA(f)*f/5.684 : wmA(f));
 function qConv(d, metric){
-  const c = qConv0(d, metric); const q0 = qOf(d, metric);
-  if (!UI.hw || (q0 !== "accel" && q0 !== "vel")) return c;
-  const q = c ? c.q : q0; const base = c ? c.off : null;
-  const rA = (d.proc && d.proc.refA) || 1e-6, rV = (d.proc && d.proc.refV) || 1e-9;
-  return { q, wm: true, lab: (c ? c.lab : metric) + "(Wm)", off: f => (base ? base(f) : 0) + wmDb(q, f), ref: c ? c.ref : (q === "vel" ? refLabel("vel", rV) : refLabel("accel", rA)) };
+  let c = qConv0(d, metric); const q0 = qOf(d, metric);
+  if (UI.hw && (q0 === "accel" || q0 === "vel")){
+    const q = c ? c.q : q0; const base = c ? c.off : null;
+    const rA = (d.proc && d.proc.refA) || 1e-6, rV = (d.proc && d.proc.refV) || 1e-9;
+    c = { q, wm: true, lab: (c ? c.lab : metric) + "(Wm)", off: f => (base ? base(f) : 0) + wmDb(q, f), ref: c ? c.ref : (q === "vel" ? refLabel("vel", rV) : refLabel("accel", rA)) };
+  }
+  const W = cwNode();
+  if (W){ const base = c ? c.off : null; c = { q: c ? c.q : q0, lab: c ? c.lab : undefined, ref: c ? c.ref : undefined, cw: true, off: f => (base ? base(f) : 0) + cwVal(W.d, f) }; }
+  return c;
 }
-function dispVals(d, metric, W){ const b = bandVals(d, metric, W); const qc = qConv(d, metric); if (!b || !qc) return b; return b.map((v, i) => v == null ? null : v + qc.off(exactF(d.f[i]))); }
+/* user weighting curve (tree item): gain in dB, interpolated on log frequency between its points; outside its range: end values held, or excluded */
+const cwNode = () => { const n = UI.cw && N(UI.cw); return n && n.d && n.d.kind === "weight" ? n : null; };
+function cwVal(d, f){
+  const F = d.span === "nb" ? d.f : d.f.map(exactF), V = d.v; if (!F.length) return 0;
+  const e = d.span === "nb" ? 1.0001 : Math.pow(10, (d.span === "1/1" ? 3 : 1)/20);
+  if (f < F[0]/e*0.9999 || f > F.at(-1)*e*1.0001) return d.edge === "hold" ? (f < F[0] ? V[0] : V.at(-1)) : NaN;
+  if (f <= F[0]) return V[0]; if (f >= F.at(-1)) return V.at(-1);
+  let i = 1; while (i < F.length - 1 && F[i] < f) i++; const u = (Math.log(f) - Math.log(F[i - 1]))/(Math.log(F[i]) - Math.log(F[i - 1]) || 1);
+  return V[i - 1] + (V[i] - V[i - 1])*Math.max(0, Math.min(1, u));
+}
+function dispVals(d, metric, W){ const b = bandVals(d, metric, W); const qc = qConv(d, metric); if (!b || !qc) return b; return b.map((v, i) => { if (v == null) return null; const x = v + qc.off(exactF(d.f[i])); return isFinite(x) ? x : null; }); }
 function bandVals(d, metric, W){
   const arr = d.m[metric]; if (!arr) return null;
   const from = d.w[metric];
@@ -671,7 +685,8 @@ function bandVals(d, metric, W){
   });
 }
 function esum(vals){ if (!vals) return null; let s = 0, n = 0; for (const v of vals){ if (v == null) continue; s += Math.pow(10, v/10); n++; } return n ? 10*Math.log10(s) : null; }
-function mLabel(metric, W, weighted){ if (typeof VIEW !== "undefined" && VIEW && VIEW.qmap && VIEW.qmap[metric]) return VIEW.qmap[metric]; if (!weighted || W === "raw") return metric; return metric.replace(/^L[ACZ]/i, "L" + W); }
+function mLabel(metric, W, weighted){ const cw = typeof UI !== "undefined" && cwNode(); const sf = cw ? `(${cw.d.short || "W"})` : "";
+  if (typeof VIEW !== "undefined" && VIEW && VIEW.qmap && VIEW.qmap[metric]) return VIEW.qmap[metric] + sf; if (!weighted || W === "raw") return metric + sf; return metric.replace(/^L[ACZ]/i, "L" + W) + sf; }
 const isMaxMin = m => /m[aá]x|m[ií]n|peak|pk/i.test(m);
 const unitOf = W => W === "A" ? "dB(A)" : W === "C" ? "dB(C)" : W === "Z" ? "dB(Z)" : ((typeof VIEW !== "undefined" && VIEW && VIEW.yLab) || "dB");
 const W_NAME = { A: "A-weighted", C: "C-weighted", Z: "Z (unweighted)", raw: "as measured" };
@@ -843,6 +858,7 @@ const ICO_M = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect 
 const ICO_T = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 8h1.5l1.2-3.5 1.6 7 1.6-6 1.4 4.5 1-2H13" stroke-width="1.3" stroke-linejoin="round"/></svg>';
 const ICO_RT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3.5 4.5c2 0 2.5 1 3.5 3s2.5 4 5.5 4" stroke-width="1.4" stroke-linecap="round"/><path d="M3.5 3.5v9h9" stroke-width="1" opacity=".6"/></svg>';
 const ICO_LIM = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 5h3v3h3v-2h4" stroke="#c8322b" stroke-width="1.8" stroke-linejoin="round"/><path d="M3 12.5h10" stroke-width="1" opacity=".5"/></svg>';
+const ICO_WT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 11c2-6 4-7 5-7s3 2 5 4" stroke="#2f6496" stroke-width="1.8" stroke-linecap="round"/><path d="M3 8h10" stroke-width="1" stroke-dasharray="1.5 1.5" opacity=".5"/></svg>';
 const ICO_AE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="2.5" width="4.5" height="11" rx="1" stroke-width="1.1"/><rect x="10" y="2.5" width="4.5" height="11" rx="1" stroke-width="1.1"/><path d="M8 2v12" stroke-width="2"/></svg>';
 const ICO_C = '<svg viewBox="0 0 10 10"><path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 const ICO_MORE = '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>';
@@ -863,7 +879,7 @@ function renderTree(){
     const sub = f ? `<span class="cnt" title="measurements inside">${measUnder(id).length}</span>` : `<span class="sub">${esc(fmtTime(parseStart(n.d.start)))}</span>`;
     return `<div class="${cls}" data-id="${id}" style="--lvl:${lvl}" draggable="true" role="treeitem" aria-level="${lvl+1}" aria-selected="${UI.sel.has(id)}"${f ? ` aria-expanded="${!!n.open}"` : ""}>
       <button class="caret ${f && n.kids.length ? "" : "none"}" tabindex="-1" data-act="toggle" aria-label="Expand or collapse">${ICO_C}</button>
-      <span class="ico">${f ? (n.open ? ICO_FO : ICO_F) : (n.d.kind === "time" ? ICO_T : n.d.kind === "ae" ? ICO_AE : n.d.kind === "rt" ? ICO_RT : n.d.kind === "limit" ? ICO_LIM : ICO_M)}</span><span class="lbl">${esc(n.name)}</span>${sub}
+      <span class="ico">${f ? (n.open ? ICO_FO : ICO_F) : (n.d.kind === "time" ? ICO_T : n.d.kind === "ae" ? ICO_AE : n.d.kind === "rt" ? ICO_RT : n.d.kind === "limit" ? ICO_LIM : n.d.kind === "weight" ? ICO_WT : ICO_M)}</span><span class="lbl">${esc(n.name)}</span>${sub}
       <button class="ib more" tabindex="-1" data-act="menu" aria-label="Options">${ICO_MORE}</button></div>`;
   }).join("");
   el.scrollTop = st;
@@ -944,6 +960,7 @@ function menuFor(id, x, y){
       { label: "New folder", run: () => newFolder("root") },
       { label: "Import Excel…", run: () => pickXlsx("root") },
       { label: "New limit curve…", run: () => limitDialog("root") },
+      { label: "New weighting curve…", run: () => weightDialog("root") },
       ...(UI.cut.length ? [{ label: `Paste ${UI.cut.length} item(s) here`, run: () => paste("root") }] : []),
       "-",
       { label: "Expand all", run: () => setAllOpen(true) },
@@ -974,6 +991,7 @@ function menuFor(id, x, y){
       { label: "New folder at same level", run: () => newFolder(n.parent, N(n.parent).kids.indexOf(id) + 1) },
       { label: "Import Excel here…", run: () => pickXlsx(id) },
       { label: "New limit curve…", run: () => limitDialog(id) },
+      { label: "New weighting curve…", run: () => weightDialog(id) },
       ...(UI.cut.length ? [{ label: `Paste ${UI.cut.length} item(s) here`, k: "Ctrl+V", run: () => paste(id) }] : []),
       "-",
       { label: "Rename", k: "F2", run: () => startRename(id) },
@@ -990,7 +1008,7 @@ function menuFor(id, x, y){
     ], n.name);
   }
   return openMenu(x, y, [
-    ...(n.d.kind === "limit" ? [{ label: "Edit limit curve…", run: () => limitDialog(n.parent, id) }] : [{ label: `Compare all “${n.name}”`, run: () => selectSameName(id) }]),
+    ...(n.d.kind === "limit" ? [{ label: "Edit limit curve…", run: () => limitDialog(n.parent, id) }] : n.d.kind === "weight" ? [{ label: "Edit weighting curve…", run: () => weightDialog(n.parent, id) }] : [{ label: `Compare all “${n.name}”`, run: () => selectSameName(id) }]),
     { label: "Rename", k: "F2", run: () => startRename(id) },
     { label: "Move to…", run: () => moveDialog([id]) },
     { label: "Cut", k: "Ctrl+X", run: () => cut([id]) },
@@ -1131,7 +1149,7 @@ function newProject(){
 }
 function exportXlsx(ids){
   if (typeof XLSX === "undefined"){ toast("Excel library not available"); return; }
-  const ms = [...new Set(topLevel(ids).flatMap(measUnder))].filter(id => !["ae", "rt", "limit"].includes(N(id).d.kind)); if (!ms.length){ toast("Nothing to export (insulation tests and reverberation times: use Copy table)"); return; }
+  const ms = [...new Set(topLevel(ids).flatMap(measUnder))].filter(id => !["ae", "rt", "limit", "weight"].includes(N(id).d.kind)); if (!ms.length){ toast("Nothing to export (insulation tests and reverberation times: use Copy table)"); return; }
   const metrics = [...new Set(ms.flatMap(id => Object.keys(N(id).d.m)))];
   const freqs = [...new Set(ms.flatMap(id => N(id).d.f))].sort((a, b) => a - b);
   const hdr = ["Project Name", "Start Time", "Elapsed Time"]; metrics.forEach(m => freqs.forEach(f => hdr.push(`${m} ${fExportLab(f)}`))); hdr.push("Folder");
@@ -1147,7 +1165,7 @@ const serColor = (K, s) => s.bg ? K.muted : K.pal[s.ci % K.pal.length];
 const cssPalette = () => { const cs = getComputedStyle(document.documentElement); return [1,2,3,4,5,6,7,8,9,10].map(i => cs.getPropertyValue("--s" + i).trim()); };
 function viewCtx(){
   const c = viewCtx0(); if (!c) return c;
-  const isAe = id => N(id).d.kind === "ae", isRt = id => N(id).d.kind === "rt", isLim = id => N(id).d.kind === "limit";
+  const isAe = id => N(id).d.kind === "ae", isRt = id => N(id).d.kind === "rt", isLim = id => N(id).d.kind === "limit" || N(id).d.kind === "weight";
   c.aes = c.ids.filter(isAe); c.rts = c.ids.filter(isRt); c.lims = c.ids.filter(isLim); c.ids = c.ids.filter(id => !isAe(id) && !isRt(id) && !isLim(id));
   if (c.aes.length || c.rts.length) c.kind = c.ids.length > 1 ? "multi" : "single";
   return c;
@@ -1166,7 +1184,7 @@ function viewCtx0(){
   return { kind: ms.length === 1 ? "single" : "multi", ids: ms, title: a.name, crumb: ["FILES", ...pathOf(a.id)].slice(0, -1).join(" \\ "), folder: a.id, gsrc };
 }
 /* each folder (or single measurement) keeps its own display settings; they travel with the project */
-const VS_KEYS = ["metric", "W", "b0", "b1", "yMin", "yMax", "yscale", "mode", "curOn", "qty", "showMean", "fz", "cursor", "nbf", "hw", "grp", "bgId", "meanOnly", "lims"];
+const VS_KEYS = ["metric", "W", "b0", "b1", "yMin", "yMax", "yscale", "mode", "curOn", "qty", "showMean", "fz", "cursor", "nbf", "hw", "grp", "bgId", "meanOnly", "lims", "cw"];
 const LASTVS = new Map(); let vsTimer = null;
 function vsKeyOf(ctx){ if (!ctx) return null; if (ctx.folder) return ctx.folder; return ctx.kind === "single" && ctx.ids.length === 1 && !(ctx.aes && ctx.aes.length) && N(ctx.ids[0]) ? N(ctx.ids[0]).parent : null; }   // measurements use their folder's settings
 function loadVS(key){
@@ -1242,7 +1260,7 @@ function buildView(){
   if (!title) title = U.sameName ? U.sameName : `${ms.length} measurements selected`;
   if (ctx.crumb === "Selection") crumb = U.sameName ? `Selection · ${ms.length} measurements named “${U.sameName}”` : "Selection comparison";
   const refs = [...new Set(ms.filter(n => n.d.m[UI.metric]).map(n => (qConv(n.d, UI.metric) || {}).ref || n.d.ref || "dB"))];
-  const qmap = {}; for (const n of ms) for (const m of Object.keys(n.d.m)){ const qc = qConv(n.d, m); if (qc) qmap[m] = qc.lab; }
+  const qmap = {}; for (const n of ms) for (const m of Object.keys(n.d.m)){ const qc = qConv(n.d, m); if (qc && qc.lab) qmap[m] = qc.lab; }
   const lus = [...new Set(series.map(s => s.lu).filter(Boolean))];
   const V = { ...ctx, grouped, qmap, linUnit: lus.length === 1 ? lus[0] : null, anyVib: ms.some(n => Object.keys(n.d.m).some(m => { const q = qOf(n.d, m); return q === "accel" || q === "vel"; })), yLab: refs.length === 1 ? refs[0] : "dB", anyNb: series.some(s => s.nb), title, crumb, ms, metrics, freqs, series, hasW, totKeys, drawKeys, metric: UI.metric, sameName: U.sameName, bk, bandAxis: `${bk} octave band [Hz]` };
   V.mean = meanSeries(V); V.meanOnly = !!(V.mean && UI.meanOnly); V.limNodes = ctx.lims; V.lims = []; return V;
@@ -1268,7 +1286,7 @@ function linInfo(d, metric){
 const dv = (v, s) => yLin() ? fmtLin(v == null ? null : (s && s.lk || 1)*Math.pow(10, v/20)) : fmt(v);
 const fmtNbf = f => f >= 100 ? f.toFixed(1) : f.toFixed(2);
 const curLabel = () => isTot(UI.cursor) ? (UI.cursor === "raw" ? `${VIEW.metric} total` : `${mLabel(VIEW.metric, UI.cursor, VIEW.hasW)} total`) : (curNb() && UI.nbf ? `${fmtNbf(UI.nbf)} Hz` : fLabHz(UI.cursor));
-function nbVal(s, f){ if (!s || !s.nb) return null; const k = Math.round(f/s.nbdf); if (k < 1 || k >= s.nb.length) return null; let v = s.nb[k]; if (!isFinite(v)) return null; const W = UI.W; if (s.wfrom && W !== "raw" && W !== s.wfrom) v = v - wgtF(s.wfrom, f) + wgtF(W, f); if (s.qoff) v += s.qoff(f); return v; }
+function nbVal(s, f){ if (!s || !s.nb) return null; const k = Math.round(f/s.nbdf); if (k < 1 || k >= s.nb.length) return null; let v = s.nb[k]; if (!isFinite(v)) return null; const W = UI.W; if (s.wfrom && W !== "raw" && W !== s.wfrom) v = v - wgtF(s.wfrom, f) + wgtF(W, f); if (s.qoff) v += s.qoff(f); return isFinite(v) ? v : null; }
 /* energetic mean of a group of series (all members, hidden or not) */
 function aggSeries(mem){
   const em = arr => { let s = 0, n = 0; for (const v of arr){ if (v == null) continue; s += Math.pow(10, v/10); n++; } return n ? 10*Math.log10(s/n) : null; };
@@ -1320,11 +1338,11 @@ function renderView(){
   RTV = null; RTSUM = null;
   if (a0 && a0.t === "m" && a0.d.kind === "ae" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderAe(a0); return; }
   if (a0 && a0.t === "m" && a0.d.kind === "rt" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderRt(a0); return; }
-  LIMDRAW = null; if (a0 && a0.t === "m" && a0.d.kind === "limit" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderLimit(a0); return; }
+  LIMDRAW = null; if (a0 && a0.t === "m" && (a0.d.kind === "limit" || a0.d.kind === "weight") && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; a0.d.kind === "weight" ? renderWeight(a0) : renderLimit(a0); return; }
   VIEW = buildView(); if (VIEW && !VIEW.empty) VIEW.lims = viewLims();
   if (!VIEW){ v.innerHTML = `<div class="empty">${measUnder("root").length ? `<h2>Select a measurement</h2>Click a measurement in the tree to see its third-octave spectrum and LAeq. Click a folder, or Ctrl-click several measurements, to overlay them and compare.` : `<h2>Empty project</h2>Import an Excel file exported from the sound level meter, UNV time signals (.unv) from the acquisition system, or open a saved project (.json).`}</div>`; return; }
   if (VIEW.empty && ((VIEW.aes && VIEW.aes.length) || (VIEW.rts && VIEW.rts.length))){ const aes = VIEW.aes || [], rts = VIEW.rts || []; v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div>` + (rts.length ? rtSummaryHtml(rts) : "") + (aes.length ? aeSummaryHtml(aes) : ""); VIEW = null; if (rts.length) bindRtSummary(rts); if (aes.length) bindAeSummary(aes); return; }
-  if (VIEW.empty && VIEW.lims && VIEW.lims.length){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div><div class="sec-h"><h4>Limit curves (${VIEW.lims.length})</h4><span class="hint">Click one to see or edit it. To draw them over spectra: open a measurement or folder → Limits.</span></div><div class="tblwrap"><table class="list" id="limList"><thead><tr><th>Name</th><th>Quantity</th><th>Span</th><th>Range</th></tr></thead><tbody>${VIEW.lims.map(id => { const n = N(id); return `<tr data-id="${id}" style="cursor:pointer"><td>${esc(n.name)}</td><td>${esc(LIM_Q[n.d.q])}</td><td>${esc(LIM_SPAN[n.d.span])}</td><td>${fLabHz(n.d.f[0])}–${fLabHz(n.d.f.at(-1))}</td></tr>`; }).join("")}</tbody></table></div>`; VIEW = null; $("#limList").onclick = e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; UI.sel = new Set([tr.dataset.id]); UI.active = tr.dataset.id; renderTree(); renderView(); }; return; }
+  if (VIEW.empty && VIEW.lims && VIEW.lims.length){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div><div class="sec-h"><h4>Limit and weighting curves (${VIEW.lims.length})</h4><span class="hint">Click one to see or edit it. Over spectra: open a measurement or folder → Limits / Weighting curve.</span></div><div class="tblwrap"><table class="list" id="limList"><thead><tr><th>Name</th><th>Type</th><th>Span</th><th>Range</th></tr></thead><tbody>${VIEW.lims.map(id => { const n = N(id); return `<tr data-id="${id}" style="cursor:pointer"><td>${esc(n.name)}</td><td>${n.d.kind === "weight" ? `Weighting (${esc(n.d.short || "W")})` : "Limit · " + esc(LIM_Q[n.d.q])}</td><td>${esc(LIM_SPAN[n.d.span])}</td><td>${fLabHz(n.d.f[0])}–${fLabHz(n.d.f.at(-1))}</td></tr>`; }).join("")}</tbody></table></div>`; VIEW = null; $("#limList").onclick = e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; UI.sel = new Set([tr.dataset.id]); UI.active = tr.dataset.id; renderTree(); renderView(); }; return; }
   if (VIEW.empty){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div><div class="empty">This folder is empty. Drag measurements here, or right-click → <b>Import Excel here…</b></div>`; VIEW = null; return; }
   const { ms, metrics, freqs, series, hasW, totKeys } = VIEW; const W = UI.W;
   const one = VIEW.kind === "single" ? ms[0] : null;
@@ -1359,6 +1377,7 @@ function renderView(){
 ` : ""}
     <label for="cBg">Background <select id="cBg">${bgOptions(series)}</select></label>
     ${limitsMenuHtml()}
+    <label for="cCw" title="Weighting curve from the tree, added to every band and narrowband line (display only)">Weighting curve <select id="cCw"><option value="">None</option>${Object.values(S.nodes).filter(n => n.t === "m" && n.d.kind === "weight").map(n => `<option value="${n.id}" ${UI.cw === n.id ? "selected" : ""}>${esc(n.name)} (${esc(n.d.short || "W")})</option>`).join("")}</select></label>
     <span class="sp"><button class="btn primary" id="bReport" title="Create a PNG of this spectrum for a report"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><path d="m3.5 11 3-3.5 2.5 2.5 2-2 1.5 3"/></svg>Report image</button></span>
   </div>`;
   const chart = `<div class="hint" style="margin-bottom:-8px">Mouse wheel on the chart zooms the frequency axis · <kbd>⇧</kbd> + drag pans · double-click shows all bands</div><div class="chartwrap"><div class="chartbox"><canvas id="chart" tabindex="0" aria-label="Third-octave spectrum. Click or use the arrow keys to move the cursor across bands and the A, C, Z totals."></canvas></div><div class="readout" id="readout"></div></div>`;
@@ -1372,7 +1391,7 @@ function renderView(){
     ${series.map(s => { const n = N(s.id); return `<tr data-id="${s.id}" class="${s.hidden ? "off" : ""}"><td>${markerSvg(s.shape, s.color)}</td><td>${esc(n.name)}${s.bg ? ' <span class="hint">background</span>' : ""}</td><td>${esc(pathOf(n.parent).join(" / "))}</td><td class="t">${s.group ? `${s.nMeas} (energetic mean)` : fmtDate(parseStart(n.d.start))}</td>${totKeys.map(k => `<td class="n ${UI.cursor === k ? "cur" : ""}">${fmt(s.tot[k])}</td>`).join("")}${dCol ? `<td class="nd" data-d="${s.id}">${dB(s)}</td>` : ""}</tr>`; }).join("")}
     </tbody>${VIEW.mean ? `<tfoot><tr class="meanrow"><td>${markerSvg("circle", "var(--ink)")}</td><td colspan="3"><b>${esc(VIEW.mean.name)}</b> <span class="hint">energetic average of the visible ${VIEW.grouped ? "folders" : "measurements"}${bgS ? ", background excluded" : ""}</span></td>${totKeys.map(k => `<td class="n"><b>${fmt(VIEW.mean.tot[k])}</b></td>`).join("")}${dCol ? `<td class="nd" data-d="__mean" style="font-weight:600">${dB(VIEW.mean)}</td>` : ""}</tr></tfoot>` : ""}</table></div>`;
   }
-  below += `<div class="sec-h"><h4>Band table</h4><span class="hint">${isMaxMin(UI.metric) ? "Max/min totals are the energetic sum of bands, not the broadband value measured by the instrument." : "Totals = energetic sum of all bands."}${(UI.qty && UI.qty !== "native" || UI.hw) && VIEW.anyVib ? ` Vibration ${UI.hw ? "Wm-weighted (ISO 2631-2) " : ""}${UI.qty && UI.qty !== "native" ? (UI.hw ? "and converted " : "converted ") : ""}for display: each band at its true mid-frequency, each narrowband line at its own frequency.` : ""}</span><span class="sp"><button class="btn" id="bCopy">Copy table</button><button class="btn" id="bXls">Export to Excel</button></span></div>
+  below += `<div class="sec-h"><h4>Band table</h4><span class="hint">${isMaxMin(UI.metric) ? "Max/min totals are the energetic sum of bands, not the broadband value measured by the instrument." : "Totals = energetic sum of all bands."}${cwNode() ? ` Weighting curve “${esc(cwNode().name)}” added to every band (at its true mid-frequency) and narrowband line.` : ""}${(UI.qty && UI.qty !== "native" || UI.hw) && VIEW.anyVib ? ` Vibration ${UI.hw ? "Wm-weighted (ISO 2631-2) " : ""}${UI.qty && UI.qty !== "native" ? (UI.hw ? "and converted " : "converted ") : ""}for display: each band at its true mid-frequency, each narrowband line at its own frequency.` : ""}</span><span class="sp"><button class="btn" id="bCopy">Copy table</button><button class="btn" id="bXls">Export to Excel</button></span></div>
     <div class="tblwrap" id="btbl"></div>`;
 
   if (VIEW.rts && VIEW.rts.length) below += rtSummaryHtml(VIEW.rts);
@@ -1391,6 +1410,7 @@ function renderView(){
   if ($("#cGrp")) $("#cGrp").onclick = e => { const b = e.target.closest("button[data-g]"); if (!b) return; UI.grp = b.dataset.g; UI.bgId = null; UI.hidden = new Set(); UI.yMin = UI.yMax = null; renderView(); };
   if ($("#cBg")) $("#cBg").onchange = e => { UI.bgId = e.target.value || null; UI.yMin = UI.yMax = null; renderView(); };
   bindLimitsMenu();
+  if ($("#cCw")) $("#cCw").onchange = e => { UI.cw = e.target.value || null; UI.yMin = UI.yMax = null; renderView(); };
 
   $("#cMetric").onchange = e => { UI.metric = e.target.value; UI.yMin = UI.yMax = null; renderView(); };
   $("#cW").onclick = e => { const b = e.target.closest("button[data-w]"); if (!b || b.disabled) return; UI.W = b.dataset.w; UI.yMin = UI.yMax = null; renderView(); };
@@ -1789,7 +1809,7 @@ function renderReport(cfg){
 function reportCfg(over = {}){
   const single = VIEW.kind === "single"; const n0 = VIEW.ms[0];
   const ML = mLabel(UI.metric, UI.W, VIEW.hasW);
-  const sub = `${ML}${yLin() ? " [" + VIEW.linUnit + " RMS, linear]" : VIEW.yLab !== "dB" ? " [" + VIEW.yLab + "]" : ""}${viewMode() === "both" ? " + narrowband" : viewMode() === "nb" ? " · narrowband only" : ""} · ${VIEW.bk} octave bands ${fLabHz(UI.b0)}–${fLabHz(UI.b1)}${UI.hw && VIEW.anyVib && UI.W === "raw" ? "" : " · " + W_NAME[UI.W]}${UI.hw && VIEW.anyVib ? " · Wm weighting (ISO 2631-2)" : ""}${single ? "" : ` · ${serCountTxt()}`}`;
+  const sub = `${ML}${yLin() ? " [" + VIEW.linUnit + " RMS, linear]" : VIEW.yLab !== "dB" ? " [" + VIEW.yLab + "]" : ""}${viewMode() === "both" ? " + narrowband" : viewMode() === "nb" ? " · narrowband only" : ""} · ${VIEW.bk} octave bands ${fLabHz(UI.b0)}–${fLabHz(UI.b1)}${UI.hw && VIEW.anyVib && UI.W === "raw" ? "" : " · " + W_NAME[UI.W]}${UI.hw && VIEW.anyVib ? " · Wm weighting (ISO 2631-2)" : ""}${cwNode() ? ` · weighting “${cwNode().name}”` : ""}${single ? "" : ` · ${serCountTxt()}`}`;
   let singleRows = [];
   if (single){
     const j = isTot(UI.cursor) ? -1 : n0.d.f.indexOf(UI.cursor);
@@ -1824,7 +1844,7 @@ function reportDialog(){
     <div class="hint">Move the cursor on the spectrum (band or A/C/Z total) before opening this, and hide rows in the measurement list to leave them out.</div>`;
   // batch: one image per measurement of this folder, with the look of the open one
   const bctx = viewCtx(); const bfid = bctx ? (bctx.folder || vsKeyOf(bctx)) : null;
-  const bids = bfid && N(bfid) ? measUnder(bfid).filter(i => !["ae", "rt", "limit"].includes(N(i).d.kind)) : [];
+  const bids = bfid && N(bfid) ? measUnder(bfid).filter(i => !["ae", "rt", "limit", "weight"].includes(N(i).d.kind)) : [];
   if (bids.length > 1){
     b.querySelector(".opts").insertAdjacentHTML("beforeend", `<div class="batch" style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:8px;border-top:1px solid var(--line)">
       <label><input type="checkbox" id="rAll" ${st.all ? "checked" : ""}> <b>Save all ${bids.length} measurements of “${esc(N(bfid).name)}”</b> with this appearance (one PNG each)</label>
@@ -3240,6 +3260,71 @@ function renderLimit(n){
   draw(); LIMDRAW = draw;
 }
 let LIMDRAW = null;
+
+/* ---------- user weighting curves (tree items), applied to the spectra of a view ---------- */
+const W_UNITS = [["db:1", "dB (gain added to the levels)"], ["lin:1", "Linear factor (× amplitude)"]];
+function weightDialog(dest, editId){
+  const old = editId ? N(editId).d : null; const inp = old ? old.input : (UI.lastWt || {});
+  const st = { name: editId ? N(editId).name : "", short: old ? old.short || "" : "", unit: inp.unit || "db:1", span: old ? old.span : inp.span || "1/3", fa: inp.fa || 1, fb: inp.fb || 80, f0: inp.f0 ?? 1, df: inp.df || 1, edge: old ? old.edge || "exclude" : inp.edge || "exclude", text: old ? inp.text || "" : "" };
+  const b = document.createElement("div"); b.style.display = "contents";
+  const fo = sel => NOMS.concat([1, 1.25, 1.6, 2, 2.5, 3.15, 4, 5, 6.3, 8]).filter((v, i, a) => a.indexOf(v) === i).sort((x, y) => x - y).map(f => `<option value="${f}" ${Math.abs(f - sel) < 1e-6 ? "selected" : ""}>${fLabHz(f)}</option>`).join("");
+  b.innerHTML = `<div class="proc flat"><div class="grid">
+      <label for="wName">Name <input type="text" id="wName" style="width:240px;font-family:var(--f-sans)" placeholder="e.g. Hull girder transfer" value="${esc(st.name)}"></label>
+      <label for="wShort">Short label <input type="text" id="wShort" maxlength="8" style="width:70px" placeholder="W" value="${esc(st.short)}"></label>
+      <label for="wU">Values in <select id="wU">${W_UNITS.map(([k, l]) => `<option value="${k}" ${k === st.unit ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    </div><div class="grid">
+      <label for="wSpan">Span <select id="wSpan">${Object.entries(LIM_SPAN).map(([k, l]) => `<option value="${k}" ${k === st.span ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label for="wFa" class="lb">From <select id="wFa">${fo(st.fa)}</select> to <select id="wFb" aria-label="Last band">${fo(st.fb)}</select></label>
+      <label for="wF0" class="ln">First frequency [Hz] <input type="number" id="wF0" step="any" value="${st.f0}"></label>
+      <label for="wDf" class="ln">Δf [Hz] <input type="number" id="wDf" step="any" min="0" value="${st.df}"></label>
+      <label for="wEdge">Outside its range <select id="wEdge"><option value="exclude" ${st.edge !== "hold" ? "selected" : ""}>Bands and lines left out</option><option value="hold" ${st.edge === "hold" ? "selected" : ""}>End values held</option></select></label>
+    </div><div class="hint">Paste the values copied from Excel (a column or a row), or two columns frequency + value. Between points the weighting is interpolated on a log-frequency scale, so narrowband lines get a smooth curve; bands take the value at their true mid-frequency.</div></div>
+    <textarea id="wTxt" rows="7" style="width:100%;font-family:var(--f-mono);font-size:12.5px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--panel)" placeholder="Paste here (Ctrl+V)">${esc(st.text)}</textarea>
+    <div id="wPrev" class="hint" style="font-family:var(--f-mono)"></div><div>Folder:</div>`;
+  const fp = folderPicker(editId ? N(editId).parent : dest); if (editId) fp.style.display = "none"; b.append(fp);
+  const g = id => b.querySelector("#" + id);
+  const read = () => ({ q: "other", unit: g("wU").value, span: g("wSpan").value, fa: +g("wFa").value, fb: +g("wFb").value, f0: parseFloat(g("wF0").value) || 0, df: parseFloat(g("wDf").value) || 1, text: g("wTxt").value });
+  const prev = () => {
+    const o = read(); const nb = o.span === "nb";
+    b.querySelectorAll(".lb").forEach(x => x.style.display = nb ? "none" : ""); b.querySelectorAll(".ln").forEach(x => x.style.display = nb ? "" : "none");
+    const P = parseNums(o.text); const r = limitFromInput(o); const need = nb || P.pairs ? null : bandList(o.span, o.fa, o.fb).length;
+    let msg = !o.text.trim() ? "Nothing pasted yet." : `${r.given} value${r.given === 1 ? "" : "s"} read${P.pairs ? " (frequency + value pairs)" : ""} → ${r.f.length} point${r.f.length === 1 ? "" : "s"}`;
+    if (need != null && o.text.trim()) msg += need === r.given ? ` · matches the ${need} bands ${fLabHz(o.fa)}–${fLabHz(o.fb)}` : ` · <span class="warn">the range ${fLabHz(o.fa)}–${fLabHz(o.fb)} has ${need} bands</span>`;
+    if (r.f.length) msg += `<br>${r.f.slice(0, 6).map((f, i) => `${fLab(f)} Hz: ${fmtSigned(r.v[i])} dB`).join(" · ")}${r.f.length > 6 ? ` … ${fLab(r.f.at(-1))} Hz: ${fmtSigned(r.v.at(-1))} dB` : ""}`;
+    g("wPrev").innerHTML = msg;
+  };
+  b.addEventListener("input", prev); b.addEventListener("change", prev); prev();
+  modal(editId ? "Edit weighting curve" : "New weighting curve", b, [
+    { label: "Cancel" },
+    { label: editId ? "Save" : "Create", primary: true, run: () => {
+      const o = read(); const r = limitFromInput(o);
+      if (r.f.length < 1){ toast("No values read: paste the weighting values first"); return false; }
+      const name = g("wName").value.trim() || "Weighting curve"; const short = g("wShort").value.trim() || "W"; const edge = g("wEdge").value;
+      UI.lastWt = { unit: o.unit, span: o.span, fa: o.fa, fb: o.fb, f0: o.f0, df: o.df, edge };
+      const d = { kind: "weight", span: o.span, f: r.f, v: r.v, short, edge, input: { ...o }, start: "", src: "weighting curve" };
+      let id = editId;
+      commit(() => { if (editId){ N(editId).name = name; N(editId).d = d; } else { id = addMeas(name, d, fp.value); N(fp.value).open = true; } });
+      UI.sel = new Set([id]); UI.active = id; renderTree(); renderView(); toast(editId ? "Weighting curve saved" : "Weighting curve created");
+    } }
+  ], true);
+  setTimeout(() => g("wTxt").focus(), 50);
+}
+function renderWeight(n){
+  const v = $("#view"); const d = n.d; const lin = (d.input && d.input.unit || "").startsWith("lin");
+  const users = Object.values(S.nodes).filter(x => x.t === "f" && x.vs && x.vs.cw === n.id).map(x => pathOf(x.id).join(" / "));
+  v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(["FILES", ...pathOf(n.parent)].join(" \\ "))} · weighting curve</div><h2>${esc(n.name)} <span class="hint" style="font-size:15px">(${esc(d.short || "W")})</span></h2></div></div>
+    <div class="info"><div><span>Span</span><b>${esc(LIM_SPAN[d.span])}</b></div><div><span>Given as</span><b>${lin ? "linear factor" : "dB"}</b></div><div><span>Points</span><b>${d.f.length} · ${fLabHz(d.f[0])}–${fLabHz(d.f.at(-1))}</b></div><div><span>Outside the range</span><b>${d.edge === "hold" ? "end values held" : "left out"}</b></div><div><span>Used in</span><b>${users.length ? esc(users.join(" · ")) : "no folder yet"}</b></div></div>
+    <div class="ctrls"><span class="hint">To apply it: open a measurement or folder → <b>Weighting curve</b>. All the spectra of that folder are weighted (display only; the data stay as measured).</span><span class="sp" style="display:flex;gap:6px"><button class="btn primary" id="wEdit">Edit…</button><button class="btn" id="wCopy">Copy table</button></span></div>
+    <div class="aebox wide"><canvas id="wC" aria-label="Weighting curve"></canvas></div>
+    <div class="tblwrap"><table class="bands" id="wT"><thead><tr><th class="rh">Frequency [Hz]</th>${d.f.map(f => `<th>${fLab(f)}</th>`).join("")}</tr></thead><tbody>
+      <tr><th class="rh">Gain [dB]</th>${d.v.map(x => `<td>${fmtSigned(x)}</td>`).join("")}</tr>
+      ${lin ? `<tr><th class="rh">Factor</th>${d.v.map(x => `<td>${fmtLin(Math.pow(10, x/20))}</td>`).join("")}</tr>` : ""}</tbody></table></div>`;
+  $("#wEdit").onclick = () => weightDialog(n.parent, n.id);
+  $("#wCopy").onclick = () => { const t = $("#wT"); const txt = [...t.rows].map(rw => [...rw.cells].map(c => c.textContent.trim()).join("\t")).join("\n"); try { navigator.clipboard.writeText(txt).then(() => toast("Table copied"), () => toast("Select the table and copy with Ctrl+C")); } catch(e){ toast("Select the table and copy with Ctrl+C"); } };
+  const draw = () => { const g = canvasInto("wC"); if (!g) return; const K = screenColors();
+    drawBandChart(g.c, 0, 0, g.W, g.H, K, { f: d.f, series: [{ name: n.name, vals: d.v, color: K.acc, lw: 2.4, shape: d.f.length <= 40 ? "circle" : null, ms: 3.4 }], yLab: "Gain [dB]", xLab: d.span === "nb" ? "Frequency [Hz] (points)" : `Frequency, ${d.span} octave band [Hz]`, head: { title: n.name, result: "" }, legendPos: "none" }); };
+  draw(); LIMDRAW = draw;
+}
 
 /* ---------- toast ---------- */
 let toastT;

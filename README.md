@@ -21,6 +21,7 @@ Herramienta en un único archivo HTML para gestionar y visualizar medidas de rui
   - Comparación de medias energéticas de varias carpetas (o de las subcarpetas de una carpeta); cualquiera puede marcarse como ruido de fondo (área sombreada y diferencia al fondo en el cursor).
   - Los ajustes de visualización se guardan por carpeta y se aplican a todos sus espectros.
 - **Curvas límite**: clic derecho en una carpeta → *New limit curve…*; se pegan los valores desde Excel indicando el tipo de espectro (1/3, 1/1 o banda estrecha), el rango de frecuencias y las unidades. En cualquier vista, el menú *Limits* las dibuja sobre los espectros.
+- **Curvas de ponderación**: clic derecho en una carpeta → *New weighting curve…*, pegando ganancias en dB o factores lineales. En una carpeta o medida, *Weighting curve* la aplica a todos sus espectros (interpolada en frecuencia logarítmica para la banda estrecha).
 - **Imágenes de informe** (PNG para Word): título, resultado, leyenda con valores del cursor y pie; opción de guardar en un paso las imágenes de todas las medidas de una carpeta con la misma apariencia y el mismo eje Y.
 - **Proyectos**: guardar, guardar como y abrir (`.json`), exportar a Excel; recuperación de la última sesión.
 
@@ -47,6 +48,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 1.7 | 17/11/2026 | Curvas de ponderación de usuario (tercios, octavas o puntos) como elementos editables del árbol; se aplican a todas las medidas de una carpeta (bandas, banda estrecha y totales). |
 | 1.6 | 17/11/2026 | Curvas límite de cliente (tercios, octavas o banda estrecha) guardadas en carpetas: se pegan desde Excel (columna, fila o pares frecuencia-valor) en dB o en unidades lineales; se dibujan sobre los espectros, con margen en el cursor y bandas que superan el límite en rojo. |
 | 1.5 | 17/11/2026 | Ruido de fondo = media energética de cualquier otra carpeta, también sobre una medida individual (línea discontinua gris y diferencia al fondo). |
 | 1.4 | 17/11/2026 | Comparación por medias energéticas de carpetas (selección de varias carpetas o subcarpetas de una carpeta); opción «solo la media»; curva de ruido de fondo sombreada con diferencia al fondo en el cursor. |
