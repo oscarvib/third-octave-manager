@@ -247,7 +247,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 <script>if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.7 · 18 Nov 2026">v2.7</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.8 · 18 Nov 2026">v2.8</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -595,7 +595,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "2.7";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "2.8";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -1174,6 +1174,7 @@ function exportXlsx(ids){
 
 /* ---------- viewer model ---------- */
 let VIEW = null;
+const NB_BLUE = "#1659c7";   // narrowband of a single measurement
 const serColor = (K, s) => s.bg ? K.muted : K.pal[s.ci % K.pal.length];
 const cssPalette = () => { const cs = getComputedStyle(document.documentElement); return [1,2,3,4,5,6,7,8,9,10].map(i => cs.getPropertyValue("--s" + i).trim()); };
 function viewCtx(){
@@ -1643,11 +1644,11 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   if (single && ser[0]){
     const s = ser[0];
     if (mode !== "nb") idx.forEach((i, k) => { const v = s.vals[i]; if (v == null || !inZ(k)) return; const [x0, x1] = bx(k); const yy = y(T(v, s));
-      const w = Math.max(1, x1 - x0 - 2*sc);   // white bar with a blue outline
+      const w = Math.max(1, x1 - x0 - 2*sc);   // light-blue bar with a light-blue outline (the background stays dark grey, the narrowband intense blue)
       c.fillStyle = K.panel; c.fillRect(x0 + sc, yy, w, base - yy);
-      if (o.hover && fs[k] === o.hover && fs[k] !== UI.cursor){ c.fillStyle = K.acc; c.globalAlpha = .12; c.fillRect(x0 + sc, yy, w, base - yy); c.globalAlpha = 1; }
-      const lw = 1.6*sc; c.strokeStyle = K.acc; c.lineWidth = lw; c.strokeRect(x0 + sc + lw/2, yy + lw/2, w - lw, base - yy - lw/2); });
-    if (mode !== "bands" && s.nb) drawNarrow(c, s, K, G, mode === "nb" ? { color: K.acc, alpha: 1, lw: 1.3*sc } : { color: K.ink, alpha: .75, lw: 1*sc });
+      c.fillStyle = K.acc2; c.globalAlpha = o.hover && fs[k] === o.hover && fs[k] !== UI.cursor ? .38 : .2; c.fillRect(x0 + sc, yy, w, base - yy); c.globalAlpha = 1;
+      const lw = 1.5*sc; c.strokeStyle = K.acc2; c.lineWidth = lw; c.strokeRect(x0 + sc + lw/2, yy + lw/2, w - lw, base - yy - lw/2); });
+    if (mode !== "bands" && s.nb) drawNarrow(c, s, K, G, mode === "nb" ? { color: NB_BLUE, alpha: 1, lw: 1.3*sc } : { color: NB_BLUE, alpha: .95, lw: 1.1*sc });
     const bgS = ser.find(x => x.bg);   // background over the bars
     if (bgS){ if (mode !== "bands" && bgS.nb) drawNarrow(c, bgS, K, G, { color: K.muted, alpha: .7, lw: 1*sc }); if (mode !== "nb") stair(bgS, K.muted, 2*sc); }
   } else {
@@ -1661,7 +1662,7 @@ function drawSpectrum(c, X, Y, Wd, Ht, K, o = {}){
   c.restore();
   // Leq column
   c.save(); c.beginPath(); c.rect(L + BW, Tp - 2, pw - BW + 2, ph + 2); c.clip();
-  if (single && ser[0]) tk.forEach((k, t) => { const v = ser[0].tot[k]; if (v == null) return; const isOver = T(v, ser[0]) > hi; const yy = isOver ? Tp : y(T(v, ser[0])); { const lw = 1.6*sc, w = tslot - 1.5*sc; c.fillStyle = K.panel; c.fillRect(tX(t) + .5, yy, w, base - yy); c.strokeStyle = K.acc; c.lineWidth = lw; c.strokeRect(tX(t) + .5 + lw/2, yy + lw/2, w - lw, base - yy - lw/2); } if (isOver) over(tX(t) + tslot/2, v, ser[0], K.ink); });
+  if (single && ser[0]) tk.forEach((k, t) => { const v = ser[0].tot[k]; if (v == null) return; const isOver = T(v, ser[0]) > hi; const yy = isOver ? Tp : y(T(v, ser[0])); { const lw = 1.5*sc, w = tslot - 1.5*sc; c.fillStyle = K.panel; c.fillRect(tX(t) + .5, yy, w, base - yy); c.fillStyle = K.acc2; c.globalAlpha = .2; c.fillRect(tX(t) + .5, yy, w, base - yy); c.globalAlpha = 1; c.strokeStyle = K.acc2; c.lineWidth = lw; c.strokeRect(tX(t) + .5 + lw/2, yy + lw/2, w - lw, base - yy - lw/2); } if (isOver) over(tX(t) + tslot/2, v, ser[0], K.ink); });
   else { ser.forEach(s => leq(s, col(s), 1.8*sc)); if (M) leq(M, K.ink, 3.4*sc, true); }
   if (single && ser[0]){ const bgS = ser.find(x => x.bg); if (bgS) leq(bgS, K.muted, 2*sc); }
   c.restore();
@@ -1783,7 +1784,7 @@ function reportWH(cfg){ if (cfg.W && cfg.H) return [cfg.W, cfg.H]; return REPORT
 /* legend rows of the report, filtered by the dialog options */
 function reportLegendRows(cfg, K){
   const single = VIEW.kind === "single"; const lg = cfg.lg || {};
-  let rows = single ? cfg.singleRows.map(r => ({ ...r, kind: r.kind || "ser" })) : visSer().map(s => ({ s, color: serColor(K, s), shape: s.shape, name: s.name, val: cfg.cursor ? valAt(s) : s.tot[VIEW.drawKeys[0]], kind: s.bg ? "bg" : "ser" }));
+  let rows = single ? cfg.singleRows.map(r => ({ ...r, kind: r.kind || "meas" })) : visSer().map(s => ({ s, color: serColor(K, s), shape: s.shape, name: s.name, val: cfg.cursor ? valAt(s) : s.tot[VIEW.drawKeys[0]], kind: s.bg ? "bg" : "ser" }));
   if (!single && VIEW.mean) rows.push({ s: VIEW.mean, color: K.ink, shape: "circle", name: VIEW.mean.name, val: cfg.cursor ? valAt(VIEW.mean) : VIEW.mean.tot[VIEW.drawKeys[0]], bold: true, kind: "mean" });
   if (!single) for (const Lm of VIEW.lims || []) rows.push({ s: VIEW.series[0], color: Lm.color, shape: "square", name: `${Lm.name} (limit)`, val: cfg.cursor && !isTot(UI.cursor) ? limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)) : undefined, kind: "lim" });
   rows = rows.filter(r => r.kind === "ser" ? lg.curves !== false : r.kind === "bg" ? lg.bg !== false : r.kind === "mean" ? lg.mean !== false : r.kind === "lim" ? lg.lims !== false : true);
@@ -3318,7 +3319,10 @@ function limitDialog(dest, editId){
 function limDispQ(){ const n0 = VIEW && VIEW.ms[0]; if (!n0) return "sound"; const q0 = qOf(n0.d, UI.metric) || "sound"; return UI.qty === "vel" && q0 === "accel" ? "vel" : UI.qty === "acc" && q0 === "vel" ? "accel" : q0; }
 function limRaw(d, f){
   if (!d.f.length) return null;
-  if (d.span !== "nb"){ const e = Math.pow(10, (d.span === "1/1" ? 3 : 1)/20); for (let i = 0; i < d.f.length; i++){ const c = exactF(d.f[i]); if (f >= c/e*0.999 && f < c*e*1.001) return d.v[i]; } return null; }
+  if (d.span !== "nb"){ const e = Math.pow(10, (d.span === "1/1" ? 3 : 1)/20); for (let i = 0; i < d.f.length; i++){ const c = exactF(d.f[i]); if (f >= c/e*0.999 && f < c*e*1.001) return d.v[i]; }
+    // bands between two given points (a limit given only at its corners): straight line on log frequency
+    const C = d.f.map(exactF); if (f < C[0] || f > C.at(-1)) return null;
+    let i = 1; while (i < C.length - 1 && C[i] < f) i++; const u = (Math.log(f) - Math.log(C[i - 1]))/(Math.log(C[i]) - Math.log(C[i - 1]) || 1); return d.v[i - 1] + (d.v[i] - d.v[i - 1])*Math.max(0, Math.min(1, u)); }
   if (f < d.f[0]*0.9999 || f > d.f.at(-1)*1.0001) return null; if (d.f.length === 1) return d.v[0];
   let i = 1; while (i < d.f.length - 1 && d.f[i] < f) i++; const a = d.f[i - 1], b = d.f[i]; const u = (Math.log(f) - Math.log(a))/(Math.log(b) - Math.log(a) || 1);
   return d.v[i - 1] + (d.v[i] - d.v[i - 1])*Math.max(0, Math.min(1, u));
@@ -3350,7 +3354,7 @@ function drawLimits(c, K, G){
   (VIEW.lims || []).forEach((L, li) => {
     const d = L.d; c.strokeStyle = L.color; c.lineWidth = 2.4*sc; c.setLineDash(li ? [7*sc, 3*sc] : []); c.lineJoin = "round"; c.beginPath(); let pen = false, lx = null, ly = null;
     if (d.span !== "nb"){ const e = Math.pow(10, (d.span === "1/1" ? 3 : 1)/20); let prevHi = null;
-      d.f.forEach(f0 => { const fc = exactF(f0), a = fc/e, b = fc*e; const v = limView(d, fc); if (v == null){ pen = false; return; } const yy = y(T(v)); const xa = xF(a), xb = xF(b);
+      bandList(d.span, d.f[0], d.f.at(-1)).forEach(f0 => { const fc = exactF(f0), a = fc/e, b = fc*e; const v = limView(d, fc); if (v == null){ pen = false; return; } const yy = y(T(v)); const xa = xF(a), xb = xF(b);
         if (pen && prevHi != null && Math.abs(prevHi - a)/a < 0.01) c.lineTo(xa, yy); else c.moveTo(xa, yy); c.lineTo(xb, yy); pen = true; prevHi = b; lx = xb; ly = yy; });
     } else {
       const fa = Math.max(d.f[0], Z0), fb = Math.min(d.f.at(-1), Z1); if (fb > fa){ const N0 = 400; for (let k = 0; k <= N0; k++){ const f = fa*Math.pow(fb/fa, k/N0); const v = limView(d, f); if (v == null){ pen = false; continue; } const xx = xF(f), yy = y(T(v)); pen ? c.lineTo(xx, yy) : c.moveTo(xx, yy); pen = true; lx = xx; ly = yy; } }
