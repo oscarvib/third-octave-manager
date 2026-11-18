@@ -247,7 +247,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 <script>if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.6 · 18 Nov 2026">v2.6</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.7 · 18 Nov 2026">v2.7</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -595,7 +595,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "2.6";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "2.7";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -692,8 +692,10 @@ function bandVals(d, metric, W){
   });
 }
 function esum(vals){ if (!vals) return null; let s = 0, n = 0; for (const v of vals){ if (v == null) continue; s += Math.pow(10, v/10); n++; } return n ? 10*Math.log10(s) : null; }
-function mLabel(metric, W, weighted){ const cw = typeof UI !== "undefined" && cwNode(); const sf = cw ? `(${cw.d.short || "W"})` : "";
-  if (typeof VIEW !== "undefined" && VIEW && VIEW.qmap && VIEW.qmap[metric]) return VIEW.qmap[metric] + sf; if (!weighted || W === "raw") return metric + sf; return metric.replace(/^L[ACZ]/i, "L" + W) + sf; }
+let NO_WTAG = false;   // report option: labels without the weighting tag, e.g. Lv instead of Lv(Wd)
+const withWtag = (on, fn) => { const p = NO_WTAG; NO_WTAG = !on; try { return fn(); } finally { NO_WTAG = p; } };
+function mLabel(metric, W, weighted){ const cw = typeof UI !== "undefined" && cwNode(); const sf = cw && !NO_WTAG ? `(${cw.d.short || "W"})` : "";
+  if (typeof VIEW !== "undefined" && VIEW && VIEW.qmap && VIEW.qmap[metric]) return (NO_WTAG ? VIEW.qmap[metric].replace(/\(Wm\)/g, "") : VIEW.qmap[metric]) + sf; if (!weighted || W === "raw") return metric + sf; return metric.replace(/^L[ACZ]/i, "L" + W) + sf; }
 const isMaxMin = m => /m[aá]x|m[ií]n|peak|pk/i.test(m);
 const unitOf = W => W === "A" ? "dB(A)" : W === "C" ? "dB(C)" : W === "Z" ? "dB(Z)" : ((typeof VIEW !== "undefined" && VIEW && VIEW.yLab) || "dB");
 const W_NAME = { A: "A-weighted", C: "C-weighted", Z: "Z (unweighted)", raw: "as measured" };
@@ -1788,7 +1790,8 @@ function reportLegendRows(cfg, K){
   if (lg.values === false) rows = rows.map(r => ({ ...r, val: undefined })).filter(r => r.name.trim());
   return rows;
 }
-function renderReport(cfg){
+function renderReport(cfg){ return withWtag(cfg.wtag !== false, () => renderReport0(cfg)); }
+function renderReport0(cfg){
   const [Wd, Ht] = reportWH(cfg);
   const sc = Math.min(Wd, Ht*1.9)/760;    // layout unit: text stays legible when the image is pasted at page width (square and portrait images too)
   const cv = document.createElement("canvas"); cv.width = Wd; cv.height = Ht;
@@ -1799,20 +1802,21 @@ function renderReport(cfg){
   const qn = { sound: "Sound pressure level", accel: "Vibration acceleration", vel: "Vibration velocity" };
   const q0 = VIEW.ms[0] ? (qOf(VIEW.ms[0].d, UI.metric) || "sound") : "sound";
   const qv = UI.qty === "vel" && q0 === "accel" ? "vel" : UI.qty === "acc" && q0 === "vel" ? "accel" : q0;
-  const kicker = `${UI.hw && qv !== "sound" ? "Wm-weighted " + (qn[qv] || "level").toLowerCase() : qn[qv] || "Level"} · ${VIEW.bk} octave bands${viewMode() !== "bands" ? " + narrowband" : ""}`;
+ const kicker = `${UI.hw && qv !== "sound" && !NO_WTAG ? "Wm-weighted " + (qn[qv] || "level").toLowerCase() : qn[qv] || "Level"} · ${VIEW.bk} octave bands${viewMode() !== "bands" ? " + narrowband" : ""}`;
   const s0 = single ? VIEW.series[0] : VIEW.mean; const rk = single ? (VIEW.hasW ? (UI.W === "raw" ? "A" : UI.W) : "raw") : VIEW.drawKeys[0];
   const result = s0 && s0.tot[rk] != null ? `${single ? "" : "Mean "}${mLabel(UI.metric, rk, VIEW.hasW)} = ${yLin() ? fmtLin((s0.lk || 1)*Math.pow(10, s0.tot[rk]/20)) + " " + VIEW.linUnit : fmt(s0.tot[rk], 1) + " " + unitOf(rk)}` : "";
   // header: only the parts switched on
   const showK = hd.kicker !== false, showT = hd.title !== false && cfg.title, showR = hd.result !== false && result, showS = hd.subtitle !== false && cfg.subtitle;
+  const fh = cfg.fh || 1;   // header text size
   let y0 = pad; c.textBaseline = "top"; c.textAlign = "left";
-  if (showK){ c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillText(ellipsize(c, kicker.toUpperCase(), Wd - 2*pad).split("").join(String.fromCharCode(8202)), pad, y0); y0 += 18*sc; }
+  if (showK){ c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS*fh}px ${K.sans}`; c.fillText(ellipsize(c, kicker.toUpperCase(), Wd - 2*pad).split("").join(String.fromCharCode(8202)), pad, y0); y0 += 18*sc*fh; }
   if (showT || showR){
-    c.font = `600 ${15*sc*FS}px ${K.sans}`; const rw = showR ? c.measureText(result).width + 24*sc : 0;
+    c.font = `600 ${15*sc*FS*fh}px ${K.sans}`; const rw = showR ? c.measureText(result).width + 24*sc : 0;
     if (showR){ c.textAlign = "right"; c.fillStyle = K.ink; c.fillText(result, Wd - pad, y0); c.textAlign = "left"; }
     if (showT){ c.fillStyle = K.ink; c.fillText(ellipsize(c, cfg.title, Wd - 2*pad - rw), pad, y0); }
-    y0 += 26*sc;
+    y0 += 26*sc*fh;
   }
-  if (showS){ c.fillStyle = K.muted; c.font = `${12*sc*FS}px ${K.sans}`; c.fillText(ellipsize(c, cfg.subtitle, Wd - 2*pad), pad, y0); y0 += 26*sc; }
+  if (showS){ c.fillStyle = K.muted; c.font = `${12*sc*FS*fh}px ${K.sans}`; c.fillText(ellipsize(c, cfg.subtitle, Wd - 2*pad), pad, y0); y0 += 26*sc*fh; }
   const anyHead = showK || showT || showR || showS;
   const top = anyHead ? y0 + 2*sc : pad, bottom0 = Ht - pad - (cfg.footer ? 20*sc : 0);
   if (anyHead){ c.strokeStyle = K.line; c.lineWidth = sc; c.beginPath(); c.moveTo(pad, top - 6*sc); c.lineTo(Wd - pad, top - 6*sc); c.stroke(); }
@@ -1824,7 +1828,7 @@ function renderReport(cfg){
   const unitsTxt = `Values in ${yLin() ? VIEW.linUnit + " RMS" : cfg.cursor ? curUnit() : (VIEW.kind === "single" ? "dB" : unitOf(VIEW.drawKeys[0]))}`;
   let legW = 0, legH = 0, colW = 0, ncol = 1;
   if (pos === "right") legW = 215*sc;
-  if (pos === "below" && rows.length){ colW = 250*sc; ncol = Math.max(1, Math.min(rows.length, Math.floor((Wd - 2*pad + 16*sc)/(colW + 16*sc)))); colW = (Wd - 2*pad - (ncol - 1)*16*sc)/ncol;
+  if (pos === "below" && rows.length){ ncol = 1; colW = Math.min(Wd - 2*pad, 520*sc);   // one column under the chart
     legH = (showHead ? 26*sc : 0) + Math.ceil(rows.length/ncol)*rowH + (showUnits && vw ? 18*sc : 0) + 10*sc; }
   const bottom = bottom0 - legH;
   const chartW = Wd - 2*pad - (legW ? legW + 16*sc : 0);
@@ -1859,7 +1863,7 @@ function renderReport(cfg){
 function reportCfg(over = {}){
   const single = VIEW.kind === "single"; const n0 = VIEW.ms[0];
   const ML = mLabel(UI.metric, UI.W, VIEW.hasW);
-  const sub = `${ML}${yLin() ? " [" + VIEW.linUnit + " RMS, linear]" : VIEW.yLab !== "dB" ? " [" + VIEW.yLab + "]" : ""}${viewMode() === "both" ? " + narrowband" : viewMode() === "nb" ? " · narrowband only" : ""} · ${VIEW.bk} octave bands ${fLabHz(UI.b0)}–${fLabHz(UI.b1)}${UI.hw && VIEW.anyVib && UI.W === "raw" ? "" : " · " + W_NAME[UI.W]}${UI.hw && VIEW.anyVib ? " · Wm weighting (ISO 2631-2)" : ""}${cwNode() ? ` · weighting “${cwNode().name}”` : ""}${single ? "" : ` · ${serCountTxt()}`}`;
+  const sub = `${ML}${yLin() ? " [" + VIEW.linUnit + " RMS, linear]" : VIEW.yLab !== "dB" ? " [" + VIEW.yLab + "]" : ""}${viewMode() === "both" ? " + narrowband" : viewMode() === "nb" ? " · narrowband only" : ""} · ${VIEW.bk} octave bands ${fLabHz(UI.b0)}–${fLabHz(UI.b1)}${UI.hw && VIEW.anyVib && UI.W === "raw" ? "" : " · " + W_NAME[UI.W]}${UI.hw && VIEW.anyVib && !NO_WTAG ? " · Wm weighting (ISO 2631-2)" : ""}${cwNode() && !NO_WTAG ? ` · weighting “${cwNode().name}”` : ""}${single ? "" : ` · ${serCountTxt()}`}`;
   let singleRows = [];
   if (single){
     const j = isTot(UI.cursor) ? -1 : n0.d.f.indexOf(UI.cursor);
@@ -1894,7 +1898,7 @@ function reportDialog(){
   const base = saved || reportDialog.state || DEF;
   const st = JSON.parse(JSON.stringify({ ...DEF, ...base, hd: { ...DEF.hd, ...(base.hd || {}) }, lg: { ...DEF.lg, ...(base.lg || {}) } }));
   if (!saved){ st.subEdited = false; st.sub = ""; st.all = false; }
-  const single = VIEW.kind === "single"; const sub0 = st.subEdited && st.sub ? st.sub : reportCfg({}).subtitle;
+  const single = VIEW.kind === "single"; const sub0 = st.subEdited && st.sub ? st.sub : withWtag(st.wtag !== false, () => reportCfg({}).subtitle);
   const ck = (id, on, lab, title) => `<label${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="${id}" ${on ? "checked" : ""}> ${lab}</label>`;
   const b = document.createElement("div"); b.style.display = "contents";
   b.innerHTML = `<div class="repgrid">
@@ -1908,7 +1912,9 @@ function reportDialog(){
         <label for="rCw" class="rcus">W <input type="number" id="rCw" min="400" max="6000" step="100" value="${st.cw}"></label><label for="rCh" class="rcus">H <input type="number" id="rCh" min="300" max="6000" step="100" value="${st.ch}"></label>
       </div>
       <div class="sec-h"><h4>Header</h4></div>
-      <div class="opts">${ck("hK", st.hd.kicker, "Quantity line")}${ck("hT", st.hd.title, "Title")}${ck("hR", st.hd.result, "Overall value")}${ck("hS", st.hd.subtitle, "Details line")}</div>
+      <div class="opts">${ck("hK", st.hd.kicker, "Quantity line")}${ck("hT", st.hd.title, "Title")}${ck("hR", st.hd.result, "Overall value")}${ck("hS", st.hd.subtitle, "Details line")}
+        <label for="rFh">Text size <select id="rFh">${[0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map(v => `<option value="${v}" ${Math.abs(v - (st.fh || 1)) < 1e-6 ? "selected" : ""}>${Math.round(v*100)} %</option>`).join("")}</select></label>
+        ${cwNode() || (UI.hw && VIEW.anyVib) ? ck("rWt", st.wtag !== false, `Weighting tag in the texts (${esc(mLabel(UI.metric, UI.W, VIEW.hasW))})`) : ""}</div>
       <label for="rTitle" style="color:var(--muted)">Title</label><input type="text" id="rTitle" value="${esc(VIEW.title)}">
       <label for="rSub" style="color:var(--muted)">Details line</label><input type="text" id="rSub" value="${esc(sub0)}">
       <div class="sec-h"><h4>Legend</h4></div>
@@ -1938,7 +1944,7 @@ function reportDialog(){
   const wh = () => { if (st.aspect === "custom") return [Math.max(400, Math.min(6000, +st.cw || 1600)), Math.max(300, Math.min(6000, +st.ch || 1200))]; const [a, bb] = REPORT_ASPECT[st.aspect] || [16, 9]; return [st.width, Math.round(st.width*bb/a)]; };
   const mkCfg = title => {
     const [W, H] = wh();
-    const cfg = reportCfg({ W, H, title: title || VIEW.title, cursor: st.cursor, legend: st.legend });
+    const cfg = withWtag(st.wtag !== false, () => reportCfg({ W, H, title: title || VIEW.title, cursor: st.cursor, legend: st.legend })); cfg.wtag = st.wtag !== false; cfg.fh = st.fh || 1;
     if (!st.cursor){ cfg.legendHead = VIEW.kind === "single" ? "Totals" : "Measurements"; cfg.legendSub = VIEW.kind === "single" ? "" : `${mLabel(UI.metric, VIEW.drawKeys[0], VIEW.hasW)} total`; if (VIEW.kind === "single") cfg.singleRows = cfg.singleRows.filter(r => / total$/.test(r.name) || r.kind === "bg"); }
     if (!st.footer) cfg.footer = ""; cfg.rows = st.rows; cfg.hd = { ...st.hd }; cfg.lg = { ...st.lg }; cfg.fn = st.fn || 1; cfg.ft = st.ft || 1;
     if (st.subEdited) cfg.subtitle = st.sub;
@@ -1949,11 +1955,12 @@ function reportDialog(){
     if (gone || (e && e.target && e.target.id === "rFrom")) return;   // "Same as folder" reopens the dialog with the other folder's settings
     st.aspect = g("rAsp").value; st.width = +g("rW").value; st.cw = +g("rCw").value; st.ch = +g("rCh").value;
     b.querySelectorAll(".rstd").forEach(x => x.style.display = st.aspect === "custom" ? "none" : ""); b.querySelectorAll(".rcus").forEach(x => x.style.display = st.aspect === "custom" ? "" : "none");
-    st.cursor = on("rCur", true); st.footer = on("rFoot", true); st.rows = on("rRows", true); st.fn = +g("rFn").value || 1; st.ft = +g("rFt").value || 1;
+    st.cursor = on("rCur", true); st.footer = on("rFoot", true); st.rows = on("rRows", true); st.fn = +g("rFn").value || 1; st.ft = +g("rFt").value || 1; st.fh = +g("rFh").value || 1; if (g("rWt")) st.wtag = g("rWt").checked;
     st.hd = { kicker: on("hK", true), title: on("hT", true), result: on("hR", true), subtitle: on("hS", true) };
     const lp = g("rLpos").value; st.legend = lp !== "none";
     st.lg = { pos: lp === "none" ? st.lg.pos : lp, head: on("lH", true), values: on("lV", true), curves: on("lC", st.lg.curves), mean: on("lM", st.lg.mean), bg: on("lB", st.lg.bg), lims: on("lL", st.lg.lims), units: on("lU", true) };
     if (e && e.target && e.target.id === "rSub"){ st.subEdited = true; st.sub = g("rSub").value; }
+    else if (!st.subEdited) g("rSub").value = withWtag(st.wtag !== false, () => reportCfg({}).subtitle);
     saveRep();
     if (b.querySelector("#rAll")){ st.all = b.querySelector("#rAll").checked; st.sameY = b.querySelector("#rSameY").checked; b.querySelector("#rSameY").disabled = !st.all; }
     const [W, H] = wh(); g("rDpi").textContent = `${W} × ${H} px · ${(W/300*2.54).toFixed(1)} × ${(H/300*2.54).toFixed(1)} cm at 300 dpi`;

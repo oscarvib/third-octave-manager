@@ -48,6 +48,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.7 | 18/11/2026 | Imágenes de informe: tamaño de letra de la cabecera ajustable; leyenda debajo de la gráfica en una sola columna; opción para quitar o poner la etiqueta de ponderación (p. ej. Lv(Wd) / Lv) en los textos. |
 | 2.6 | 18/11/2026 | Las barras del espectro de una medida se dibujan blancas con contorno azul (también la columna del total). |
 | 2.5 | 17/11/2026 | Copiar los parámetros de impresión de una carpeta a otras: «Same as folder» en la ventana de imagen, o clic derecho → Copy / Paste print settings (también a subcarpetas o a varias carpetas seleccionadas). La línea de detalle de cada carpeta se conserva. |
 | 2.4 | 17/11/2026 | El fondo se rotula solo «BACKGROUND», también con curva de ponderación. |
