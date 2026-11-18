@@ -245,7 +245,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.8 · 18 Nov 2026">v2.8</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.9 · 18 Nov 2026">v2.9</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -593,7 +593,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "2.8";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "2.9";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -1782,9 +1782,10 @@ function reportWH(cfg){ if (cfg.W && cfg.H) return [cfg.W, cfg.H]; return REPORT
 /* legend rows of the report, filtered by the dialog options */
 function reportLegendRows(cfg, K){
   const single = VIEW.kind === "single"; const lg = cfg.lg || {};
-  let rows = single ? cfg.singleRows.map(r => ({ ...r, kind: r.kind || "meas" })) : visSer().map(s => ({ s, color: serColor(K, s), shape: s.shape, name: s.name, val: cfg.cursor ? valAt(s) : s.tot[VIEW.drawKeys[0]], kind: s.bg ? "bg" : "ser" }));
-  if (!single && VIEW.mean) rows.push({ s: VIEW.mean, color: K.ink, shape: "circle", name: VIEW.mean.name, val: cfg.cursor ? valAt(VIEW.mean) : VIEW.mean.tot[VIEW.drawKeys[0]], bold: true, kind: "mean" });
-  if (!single) for (const Lm of VIEW.lims || []) rows.push({ s: VIEW.series[0], color: Lm.color, shape: "square", name: `${Lm.name} (limit)`, val: cfg.cursor && !isTot(UI.cursor) ? limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)) : undefined, kind: "lim" });
+  const atCur = cfg.vmode !== "total";
+  let rows = single ? cfg.singleRows.map(r => ({ ...r, kind: r.kind || "meas" })) : visSer().map(s => ({ s, color: serColor(K, s), shape: s.shape, name: s.name, val: atCur ? valAt(s) : s.tot[VIEW.drawKeys[0]], kind: s.bg ? "bg" : "ser" }));
+  if (!single && VIEW.mean) rows.push({ s: VIEW.mean, color: K.ink, shape: "circle", name: VIEW.mean.name, val: atCur ? valAt(VIEW.mean) : VIEW.mean.tot[VIEW.drawKeys[0]], bold: true, kind: "mean" });
+  if (!single) for (const Lm of VIEW.lims || []) rows.push({ s: VIEW.series[0], color: Lm.color, shape: "square", name: Lm.name, val: atCur && !isTot(UI.cursor) ? limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)) : undefined, kind: "lim" });
   rows = rows.filter(r => r.kind === "ser" ? lg.curves !== false : r.kind === "bg" ? lg.bg !== false : r.kind === "mean" ? lg.mean !== false : r.kind === "lim" ? lg.lims !== false : true);
   if (lg.values === false) rows = rows.map(r => ({ ...r, val: undefined })).filter(r => r.name.trim());
   return rows;
@@ -1824,7 +1825,7 @@ function renderReport0(cfg){
   const rows = pos === "none" ? [] : reportLegendRows(cfg, K);
   const showHead = lg.head !== false, showUnits = lg.units !== false;
   const rowH = 21*sc, vw = lg.values === false ? 0 : 62*sc;
-  const unitsTxt = `Values in ${yLin() ? VIEW.linUnit + " RMS" : cfg.cursor ? curUnit() : (VIEW.kind === "single" ? "dB" : unitOf(VIEW.drawKeys[0]))}`;
+  const unitsTxt = `Values in ${yLin() ? VIEW.linUnit + " RMS" : cfg.vmode !== "total" ? curUnit() : (VIEW.kind === "single" ? VIEW.yLab || "dB" : unitOf(VIEW.drawKeys[0]))}`;
   let legW = 0, legH = 0, colW = 0, ncol = 1;
   if (pos === "right") legW = 215*sc;
   if (pos === "below" && rows.length){ ncol = 1; colW = Math.min(Wd - 2*pad, 520*sc);   // one column under the chart
@@ -1864,20 +1865,27 @@ function reportCfg(over = {}){
   const ML = mLabel(UI.metric, UI.W, VIEW.hasW);
   const sub = `${ML}${yLin() ? " [" + VIEW.linUnit + " RMS, linear]" : VIEW.yLab !== "dB" ? " [" + VIEW.yLab + "]" : ""}${viewMode() === "both" ? " + narrowband" : viewMode() === "nb" ? " · narrowband only" : ""} · ${VIEW.bk} octave bands ${fLabHz(UI.b0)}–${fLabHz(UI.b1)}${UI.hw && VIEW.anyVib && UI.W === "raw" ? "" : " · " + W_NAME[UI.W]}${UI.hw && VIEW.anyVib && !NO_WTAG ? " · Wm weighting (ISO 2631-2)" : ""}${cwNode() && !NO_WTAG ? ` · weighting “${cwNode().name}”` : ""}${single ? "" : ` · ${serCountTxt()}`}`;
   let singleRows = [];
-  if (single){
+  const vmode = over.vmode || (over.cursor === false ? "total" : "cursor");   // legend values: at the cursor, or the overall (energetic sum)
+  const rkT = VIEW.hasW ? (UI.W === "raw" ? "A" : UI.W) : "raw";
+  if (single && vmode === "total"){
+    singleRows = Object.keys(n0.d.m).map(m => { const wd = !!n0.d.w[m]; const k = wd ? rkT : "raw"; const cur = m === UI.metric;
+      return { name: mLabel(m, k, wd), val: esum(dispVals(n0.d, m, k)), hl: cur, ...(cur ? { color: REPORT_COLORS.acc2, shape: "square" } : {}) }; });
+    const bgS = VIEW.series.find(s => s.bg); if (bgS) singleRows.push({ name: bgS.name, val: bgS.tot[VIEW.hasW ? rkT : "raw"] ?? bgS.tot.raw, s: bgS, color: REPORT_COLORS.muted, shape: "diamond", kind: "bg" });
+    for (const Lm of VIEW.lims || []) singleRows.push({ name: Lm.name, val: undefined, s: VIEW.series[0], color: Lm.color, shape: "square", kind: "lim" });
+  } else if (single){
     const j = isTot(UI.cursor) ? -1 : n0.d.f.indexOf(UI.cursor);
     const nbCur = !isTot(UI.cursor) && curNb() && UI.nbf && VIEW.series[0] && VIEW.series[0].nb;   // cursor on the narrowband: show that line's value, as on the chart
-    singleRows = Object.keys(n0.d.m).map(m => { const wd = !!n0.d.w[m]; const k = isTot(UI.cursor) ? (wd ? UI.cursor : "raw") : (wd ? UI.W : "raw"); return { name: mLabel(m, k, wd), val: isTot(UI.cursor) ? esum(dispVals(n0.d, m, k)) : (nbCur && m === UI.metric ? nbVal(VIEW.series[0], UI.nbf) : j >= 0 ? dispVals(n0.d, m, k)[j] : null), hl: m === UI.metric }; });
+    singleRows = Object.keys(n0.d.m).map(m => { const wd = !!n0.d.w[m]; const k = isTot(UI.cursor) ? (wd ? UI.cursor : "raw") : (wd ? UI.W : "raw"); return { name: mLabel(m, k, wd), val: isTot(UI.cursor) ? esum(dispVals(n0.d, m, k)) : (nbCur && m === UI.metric ? nbVal(VIEW.series[0], UI.nbf) : j >= 0 ? dispVals(n0.d, m, k)[j] : null), hl: m === UI.metric, ...(m === UI.metric ? { color: REPORT_COLORS.acc2, shape: "square" } : {}) }; });
     const bgS = VIEW.series.find(s => s.bg); if (bgS) singleRows.push({ name: bgS.name, val: valAt(bgS), s: bgS, color: REPORT_COLORS.muted, shape: "diamond", kind: "bg" });
-    for (const Lm of VIEW.lims || []) singleRows.push({ name: `${Lm.name} (limit)`, val: isTot(UI.cursor) ? undefined : limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)), s: VIEW.series[0], color: Lm.color, shape: "square", kind: "lim" });
+    for (const Lm of VIEW.lims || []) singleRows.push({ name: Lm.name, val: isTot(UI.cursor) ? undefined : limView(Lm.d, curNb() && UI.nbf ? UI.nbf : exactF(UI.cursor)), s: VIEW.series[0], color: Lm.color, shape: "square", kind: "lim" });
     if (VIEW.hasW){ const eqM = Object.keys(n0.d.m).find(m => /eq/i.test(m)) || UI.metric; singleRows.push({ name: " ", val: undefined }); TOTKEYS.forEach(k => singleRows.push({ name: `${mLabel(eqM, k, 1)} total`, val: esum(bandVals(n0.d, eqM, k)) })); }
   }
   const src = [...new Set(VIEW.ms.map(n => n.d.src).filter(Boolean))].join(", ");
   const t0 = Math.min(...VIEW.ms.map(n => parseStart(n.d.start)).filter(isFinite));
   return Object.assign({
     size: "1600x900", title: VIEW.title, subtitle: sub, cursor: true, legend: true,
-    legendHead: single ? "Cursor values" : (VIEW.sameName ? `${VIEW.sameName} · by folder` : "Cursor values"),
-    legendSub: curLabel(), singleRows,
+    legendHead: vmode === "total" ? "Overall values" : single ? "Cursor values" : (VIEW.sameName ? `${VIEW.sameName} · by folder` : "Cursor values"),
+    legendSub: vmode === "total" ? (single ? "energetic sum of the bands" : `${mLabel(UI.metric, VIEW.drawKeys[0], VIEW.hasW)} total`) : curLabel(), singleRows, vmode,
     footer: `${single ? "Folder: " + (pathOf(n0.parent).join(" / ") || "—") + " · " : ""}Start ${fmtDate(t0)}${src ? " · Source: " + src : ""}`,
   }, over);
 }
@@ -1919,14 +1927,15 @@ function reportDialog(){
       <div class="sec-h"><h4>Legend</h4></div>
       <div class="opts">
         <label for="rLpos">Position <select id="rLpos"><option value="right" ${st.legend && st.lg.pos === "right" ? "selected" : ""}>Right column</option><option value="below" ${st.legend && st.lg.pos === "below" ? "selected" : ""}>Below the chart</option><option value="none" ${!st.legend ? "selected" : ""}>None</option></select></label>
-        ${ck("lH", st.lg.head, "Heading and cursor frequency")}${ck("lV", st.lg.values, "Values")}${!single ? ck("lC", st.lg.curves, "One row per curve") : ""}${!single && VIEW.mean ? ck("lM", st.lg.mean, "Mean") : ""}${VIEW.series.some(s => s.bg) ? ck("lB", st.lg.bg, "Background") : ""}${VIEW.lims && VIEW.lims.length ? ck("lL", st.lg.lims, "Limits") : ""}${ck("lU", st.lg.units, "Units note")}
+        <label for="lVm">Values <select id="lVm"><option value="cursor" ${(st.lg.vmode || (st.cursor ? "cursor" : "total")) === "cursor" ? "selected" : ""}>At the cursor (${esc(curLabel())})</option><option value="total" ${(st.lg.vmode || (st.cursor ? "cursor" : "total")) === "total" ? "selected" : ""}>Overall (energetic sum)</option></select></label>
+        ${ck("lH", st.lg.head, "Heading")}${ck("lV", st.lg.values, "Show values")}${!single ? ck("lC", st.lg.curves, "One row per curve") : ""}${!single && VIEW.mean ? ck("lM", st.lg.mean, "Mean") : ""}${VIEW.series.some(s => s.bg) ? ck("lB", st.lg.bg, "Background") : ""}${VIEW.lims && VIEW.lims.length ? ck("lL", st.lg.lims, "Limits") : ""}${ck("lU", st.lg.units, "Units note")}
       </div>
       <div class="sec-h"><h4>Chart</h4></div>
       <div class="opts">
         <label for="rFn">Axis numbers <select id="rFn">${[0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map(v => `<option value="${v}" ${Math.abs(v - (st.fn || 1)) < 1e-6 ? "selected" : ""}>${Math.round(v*100)} %</option>`).join("")}</select></label>
         <label for="rFt">Axis titles <select id="rFt">${[0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map(v => `<option value="${v}" ${Math.abs(v - (st.ft || 1)) < 1e-6 ? "selected" : ""}>${Math.round(v*100)} %</option>`).join("")}</select></label>
       </div>
-      <div class="opts">${ck("rCur", st.cursor, `Cursor (${esc(curLabel())})`)}${ck("rRows", st.rows !== false, "Values under the axis (when they fit)")}${ck("rFoot", st.footer, "Footer with time and source")}</div>
+      <div class="opts">${ck("rCur", st.cursor, `Cursor line on the chart (${esc(curLabel())})`)}${ck("rRows", st.rows !== false, "Values under the axis (when they fit)")}${ck("rFoot", st.footer, "Footer with time and source")}</div>
     </div>
     <div class="repprev"><img class="prev" id="rPrev" alt="Report image preview"><div class="hint">Move the cursor on the spectrum (band or A/C/Z total) before opening this, and hide rows in the measurement list to leave them out.</div></div>
   </div>`;
@@ -1943,8 +1952,8 @@ function reportDialog(){
   const wh = () => { if (st.aspect === "custom") return [Math.max(400, Math.min(6000, +st.cw || 1600)), Math.max(300, Math.min(6000, +st.ch || 1200))]; const [a, bb] = REPORT_ASPECT[st.aspect] || [16, 9]; return [st.width, Math.round(st.width*bb/a)]; };
   const mkCfg = title => {
     const [W, H] = wh();
-    const cfg = withWtag(st.wtag !== false, () => reportCfg({ W, H, title: title || VIEW.title, cursor: st.cursor, legend: st.legend })); cfg.wtag = st.wtag !== false; cfg.fh = st.fh || 1;
-    if (!st.cursor){ cfg.legendHead = VIEW.kind === "single" ? "Totals" : "Measurements"; cfg.legendSub = VIEW.kind === "single" ? "" : `${mLabel(UI.metric, VIEW.drawKeys[0], VIEW.hasW)} total`; if (VIEW.kind === "single") cfg.singleRows = cfg.singleRows.filter(r => / total$/.test(r.name) || r.kind === "bg"); }
+    const vmode = st.lg.vmode || (st.cursor ? "cursor" : "total");
+    const cfg = withWtag(st.wtag !== false, () => reportCfg({ W, H, title: title || VIEW.title, cursor: st.cursor, legend: st.legend, vmode })); cfg.wtag = st.wtag !== false; cfg.fh = st.fh || 1;
     if (!st.footer) cfg.footer = ""; cfg.rows = st.rows; cfg.hd = { ...st.hd }; cfg.lg = { ...st.lg }; cfg.fn = st.fn || 1; cfg.ft = st.ft || 1;
     if (st.subEdited) cfg.subtitle = st.sub;
     return cfg;
@@ -1957,7 +1966,7 @@ function reportDialog(){
     st.cursor = on("rCur", true); st.footer = on("rFoot", true); st.rows = on("rRows", true); st.fn = +g("rFn").value || 1; st.ft = +g("rFt").value || 1; st.fh = +g("rFh").value || 1; if (g("rWt")) st.wtag = g("rWt").checked;
     st.hd = { kicker: on("hK", true), title: on("hT", true), result: on("hR", true), subtitle: on("hS", true) };
     const lp = g("rLpos").value; st.legend = lp !== "none";
-    st.lg = { pos: lp === "none" ? st.lg.pos : lp, head: on("lH", true), values: on("lV", true), curves: on("lC", st.lg.curves), mean: on("lM", st.lg.mean), bg: on("lB", st.lg.bg), lims: on("lL", st.lg.lims), units: on("lU", true) };
+    st.lg = { pos: lp === "none" ? st.lg.pos : lp, vmode: g("lVm").value, head: on("lH", true), values: on("lV", true), curves: on("lC", st.lg.curves), mean: on("lM", st.lg.mean), bg: on("lB", st.lg.bg), lims: on("lL", st.lg.lims), units: on("lU", true) };
     if (e && e.target && e.target.id === "rSub"){ st.subEdited = true; st.sub = g("rSub").value; }
     else if (!st.subEdited) g("rSub").value = withWtag(st.wtag !== false, () => reportCfg({}).subtitle);
     saveRep();
