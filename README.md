@@ -48,6 +48,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.11 | 19/11/2026 | Fondo en gris claro (discontinuo y con área sombreada) para no confundirlo con la media negra; con «solo la media» y fondo, la media pasa a azul intenso. |
 | 2.10 | 18/11/2026 | Corregido: al guardar las imágenes de toda una carpeta no salían las curvas límite. |
 | 2.9 | 18/11/2026 | Leyenda del informe: valores en el cursor o valor global (suma energética), independiente de dibujar la línea del cursor; con una sola medida salen la medida, el fondo y los límites (estos sin valor total). |
 | 2.8 | 18/11/2026 | Informe de una medida: su fila y su valor global siempre en la leyenda (también con fondo y límites). Barras en azul claro y banda estrecha en azul intenso para distinguirlas del fondo gris. Límites de bandas dados solo en algunos puntos: se completan las bandas intermedias. |
