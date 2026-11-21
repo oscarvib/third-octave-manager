@@ -245,7 +245,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.11 · 19 Nov 2026">v2.11</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.12 · 21 Nov 2026">v2.12</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -317,6 +317,7 @@ function parseUnv(buf, fileName){
       id1: R[0].trim(), id2: R[1].trim(), id3: R[2].trim(), id4: R[3].trim(), id5: R[4].trim(),
       ftype: parseInt(fld(r6, 0, 5)) || 0,
       entity: fld(r6, 35, 45), node: parseInt(fld(r6, 45, 55)) || 0, dir: parseInt(fld(r6, 55, 59)) || 0,
+      respNode: parseInt(fld(r6, 41, 51)) || 0, respDir: parseInt(fld(r6, 51, 55)) || 0, refNode: parseInt(fld(r6, 66, 76)) || 0, refDir: parseInt(fld(r6, 76, 80)) || 0,
       absType: parseInt(fld(R[7], 0, 10)) || 0, absUnits: fld(R[7], 47, 67),
       ordCode: parseInt(fld(ord, 0, 10)) || 0, ordLabel: fld(ord, 26, 46), units: fld(ord, 47, 67),
       n: nPts, x0, dx, ordType, even
@@ -336,8 +337,8 @@ function parseUnv(buf, fileName){
           ch.x0 = xa; ch.dx = xb - xa; ch.xs = new Float32Array(nPts); for (let i = 0; i < nPts; i++){ data[i] = get(i*ps + 4); ch.xs[i] = dv.getFloat32(i*ps, le); }
         }
       } else {   // complex spectra (FRF, cross spectrum…): keep the magnitude
-        data = new Float32Array(nPts); const ps = (even ? 0 : 4) + 2*step; if (!even) ch.xs = new Float32Array(nPts);
-        for (let i = 0; i < nPts; i++){ const o = i*ps + (even ? 0 : 4); data[i] = Math.hypot(get(o), get(o + step)); if (!even) ch.xs[i] = dv.getFloat32(i*ps, le); }
+        data = new Float32Array(nPts); ch.re = new Float32Array(nPts); ch.im = new Float32Array(nPts); const ps = (even ? 0 : 4) + 2*step; if (!even) ch.xs = new Float32Array(nPts);
+        for (let i = 0; i < nPts; i++){ const o = i*ps + (even ? 0 : 4); ch.re[i] = get(o); ch.im[i] = get(o + step); data[i] = Math.hypot(ch.re[i], ch.im[i]); if (!even) ch.xs[i] = dv.getFloat32(i*ps, le); }
         if (!even){ ch.x0 = ch.xs[0]; ch.dx = nPts > 1 ? ch.xs[1] - ch.xs[0] : 1; }
       }
       pos += nBytes;
@@ -349,9 +350,10 @@ function parseUnv(buf, fileName){
       if (!complex){
         if (even){ for (let i = 0; i < nPts && i < vals.length; i++) data[i] = vals[i]; }
         else { ch.x0 = vals[0]; ch.dx = (vals[2] ?? vals[0] + 1) - vals[0]; ch.xs = new Float32Array(nPts); for (let i = 0; i < nPts; i++){ data[i] = vals[2*i + 1]; ch.xs[i] = vals[2*i]; } }
-      } else {   // complex: magnitude
-        if (even){ for (let i = 0; i < nPts; i++) data[i] = Math.hypot(vals[2*i] || 0, vals[2*i + 1] || 0); }
-        else { ch.xs = new Float32Array(nPts); for (let i = 0; i < nPts; i++){ ch.xs[i] = vals[3*i]; data[i] = Math.hypot(vals[3*i + 1] || 0, vals[3*i + 2] || 0); } ch.x0 = ch.xs[0]; ch.dx = nPts > 1 ? ch.xs[1] - ch.xs[0] : 1; }
+      } else {   // complex (FRF, cross spectrum…): magnitude, and the real and imaginary parts kept
+        ch.re = new Float32Array(nPts); ch.im = new Float32Array(nPts);
+        if (even){ for (let i = 0; i < nPts; i++){ ch.re[i] = vals[2*i] || 0; ch.im[i] = vals[2*i + 1] || 0; data[i] = Math.hypot(ch.re[i], ch.im[i]); } }
+        else { ch.xs = new Float32Array(nPts); for (let i = 0; i < nPts; i++){ ch.xs[i] = vals[3*i]; ch.re[i] = vals[3*i + 1] || 0; ch.im[i] = vals[3*i + 2] || 0; data[i] = Math.hypot(ch.re[i], ch.im[i]); } ch.x0 = ch.xs[0]; ch.dx = nPts > 1 ? ch.xs[1] - ch.xs[0] : 1; }
       }
     }
     // spectra (abscissa = frequency): kept apart, imported as narrowband lines
@@ -593,7 +595,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "2.11";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "2.12";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -866,6 +868,7 @@ const ICO_T = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect 
 const ICO_RT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3.5 4.5c2 0 2.5 1 3.5 3s2.5 4 5.5 4" stroke-width="1.4" stroke-linecap="round"/><path d="M3.5 3.5v9h9" stroke-width="1" opacity=".6"/></svg>';
 const ICO_LIM = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 5h3v3h3v-2h4" stroke="#c8322b" stroke-width="1.8" stroke-linejoin="round"/><path d="M3 12.5h10" stroke-width="1" opacity=".5"/></svg>';
 const ICO_WT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 11c2-6 4-7 5-7s3 2 5 4" stroke="#2f6496" stroke-width="1.8" stroke-linecap="round"/><path d="M3 8h10" stroke-width="1" stroke-dasharray="1.5 1.5" opacity=".5"/></svg>';
+const ICO_FRF = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-width="1.1"/><path d="M3 11.5c1.5 0 2-1 2.6-4.5.4 2.5.9 4 1.6 4s1.2-3 2-6c.6 3 1.2 5 3.8 5" stroke="#7a3fb0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ICO_AE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><rect x="1.5" y="2.5" width="4.5" height="11" rx="1" stroke-width="1.1"/><rect x="10" y="2.5" width="4.5" height="11" rx="1" stroke-width="1.1"/><path d="M8 2v12" stroke-width="2"/></svg>';
 const ICO_C = '<svg viewBox="0 0 10 10"><path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 const ICO_MORE = '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>';
@@ -886,7 +889,7 @@ function renderTree(){
     const sub = f ? `<span class="cnt" title="measurements inside">${measUnder(id).length}</span>` : `<span class="sub">${esc(fmtTime(parseStart(n.d.start)))}</span>`;
     return `<div class="${cls}" data-id="${id}" style="--lvl:${lvl}" draggable="true" role="treeitem" aria-level="${lvl+1}" aria-selected="${UI.sel.has(id)}"${f ? ` aria-expanded="${!!n.open}"` : ""}>
       <button class="caret ${f && n.kids.length ? "" : "none"}" tabindex="-1" data-act="toggle" aria-label="Expand or collapse">${ICO_C}</button>
-      <span class="ico">${f ? (n.open ? ICO_FO : ICO_F) : (n.d.kind === "time" ? ICO_T : n.d.kind === "ae" ? ICO_AE : n.d.kind === "rt" ? ICO_RT : n.d.kind === "limit" ? ICO_LIM : n.d.kind === "weight" ? ICO_WT : ICO_M)}</span><span class="lbl">${esc(n.name)}</span>${sub}
+      <span class="ico">${f ? (n.open ? ICO_FO : ICO_F) : (n.d.kind === "time" ? ICO_T : n.d.kind === "ae" ? ICO_AE : n.d.kind === "rt" ? ICO_RT : n.d.kind === "limit" ? ICO_LIM : n.d.kind === "weight" ? ICO_WT : (n.d.kind === "frf" || n.d.kind === "coh") ? ICO_FRF : ICO_M)}</span><span class="lbl">${esc(n.name)}</span>${sub}
       <button class="ib more" tabindex="-1" data-act="menu" aria-label="Options">${ICO_MORE}</button></div>`;
   }).join("");
   el.scrollTop = st;
@@ -1160,7 +1163,7 @@ function newProject(){
 }
 function exportXlsx(ids){
   if (typeof XLSX === "undefined"){ toast("Excel library not available"); return; }
-  const ms = [...new Set(topLevel(ids).flatMap(measUnder))].filter(id => !["ae", "rt", "limit", "weight"].includes(N(id).d.kind)); if (!ms.length){ toast("Nothing to export (insulation tests and reverberation times: use Copy table)"); return; }
+  const ms = [...new Set(topLevel(ids).flatMap(measUnder))].filter(id => !["ae", "rt", "limit", "weight", "frf", "coh"].includes(N(id).d.kind)); if (!ms.length){ toast("Nothing to export (insulation tests and reverberation times: use Copy table)"); return; }
   const metrics = [...new Set(ms.flatMap(id => Object.keys(N(id).d.m)))];
   const freqs = [...new Set(ms.flatMap(id => N(id).d.f))].sort((a, b) => a - b);
   const hdr = ["Project Name", "Start Time", "Elapsed Time"]; metrics.forEach(m => freqs.forEach(f => hdr.push(`${m} ${fExportLab(f)}`))); hdr.push("Folder");
@@ -1183,9 +1186,9 @@ const serColor = (K, s) => s.bg ? BG_GREY : K.pal[s.ci % K.pal.length];
 const cssPalette = () => { const cs = getComputedStyle(document.documentElement); return [1,2,3,4,5,6,7,8,9,10].map(i => cs.getPropertyValue("--s" + i).trim()); };
 function viewCtx(){
   const c = viewCtx0(); if (!c) return c;
-  const isAe = id => N(id).d.kind === "ae", isRt = id => N(id).d.kind === "rt", isLim = id => N(id).d.kind === "limit" || N(id).d.kind === "weight";
-  c.aes = c.ids.filter(isAe); c.rts = c.ids.filter(isRt); c.lims = c.ids.filter(isLim); c.ids = c.ids.filter(id => !isAe(id) && !isRt(id) && !isLim(id));
-  if (c.aes.length || c.rts.length) c.kind = c.ids.length > 1 ? "multi" : "single";
+  const isAe = id => N(id).d.kind === "ae", isRt = id => N(id).d.kind === "rt", isLim = id => N(id).d.kind === "limit" || N(id).d.kind === "weight", isFrf = id => N(id).d.kind === "frf" || N(id).d.kind === "coh";
+  c.aes = c.ids.filter(isAe); c.rts = c.ids.filter(isRt); c.lims = c.ids.filter(isLim); c.frfs = c.ids.filter(isFrf); c.ids = c.ids.filter(id => !isAe(id) && !isRt(id) && !isLim(id) && !isFrf(id));
+  if (c.aes.length || c.rts.length || c.frfs.length) c.kind = c.ids.length > 1 ? "multi" : "single";
   return c;
 }
 function viewCtx0(){
@@ -1362,10 +1365,12 @@ function renderView(){
   RTV = null; RTSUM = null;
   if (a0 && a0.t === "m" && a0.d.kind === "ae" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderAe(a0); return; }
   if (a0 && a0.t === "m" && a0.d.kind === "rt" && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderRt(a0); return; }
+  FRFV = null; FRFSUM = null;
+  if (a0 && a0.t === "m" && (a0.d.kind === "frf" || a0.d.kind === "coh") && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; renderFrf(a0); return; }
   LIMDRAW = null; if (a0 && a0.t === "m" && (a0.d.kind === "limit" || a0.d.kind === "weight") && [...UI.sel].filter(id => N(id)).length <= 1){ VIEW = null; a0.d.kind === "weight" ? renderWeight(a0) : renderLimit(a0); return; }
   VIEW = buildView(); if (VIEW && !VIEW.empty) VIEW.lims = viewLims();
   if (!VIEW){ v.innerHTML = `<div class="empty">${measUnder("root").length ? `<h2>Select a measurement</h2>Click a measurement in the tree to see its third-octave spectrum and LAeq. Click a folder, or Ctrl-click several measurements, to overlay them and compare.` : `<h2>Empty project</h2>Import an Excel file exported from the sound level meter, UNV time signals (.unv) from the acquisition system, or open a saved project (.json).`}</div>`; return; }
-  if (VIEW.empty && ((VIEW.aes && VIEW.aes.length) || (VIEW.rts && VIEW.rts.length))){ const aes = VIEW.aes || [], rts = VIEW.rts || []; v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div>` + (rts.length ? rtSummaryHtml(rts) : "") + (aes.length ? aeSummaryHtml(aes) : ""); VIEW = null; if (rts.length) bindRtSummary(rts); if (aes.length) bindAeSummary(aes); return; }
+  if (VIEW.empty && ((VIEW.aes && VIEW.aes.length) || (VIEW.rts && VIEW.rts.length) || (VIEW.frfs && VIEW.frfs.length))){ const aes = VIEW.aes || [], rts = VIEW.rts || [], frs = VIEW.frfs || []; v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div>` + (frs.length ? frfSummaryHtml(frs) : "") + (rts.length ? rtSummaryHtml(rts) : "") + (aes.length ? aeSummaryHtml(aes) : ""); VIEW = null; if (frs.length) bindFrfSummary(frs); if (rts.length) bindRtSummary(rts); if (aes.length) bindAeSummary(aes); return; }
   if (VIEW.empty && VIEW.lims && VIEW.lims.length){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div><div class="sec-h"><h4>Limit and weighting curves (${VIEW.lims.length})</h4><span class="hint">Click one to see or edit it. Over spectra: open a measurement or folder → Limits / Weighting curve.</span></div><div class="tblwrap"><table class="list" id="limList"><thead><tr><th>Name</th><th>Type</th><th>Span</th><th>Range</th></tr></thead><tbody>${VIEW.lims.map(id => { const n = N(id); return `<tr data-id="${id}" style="cursor:pointer"><td>${esc(n.name)}</td><td>${n.d.kind === "weight" ? `Weighting (${esc(n.d.short || "W")})` : "Limit · " + esc(LIM_Q[n.d.q])}</td><td>${esc(LIM_SPAN[n.d.span])}</td><td>${fLabHz(n.d.f[0])}–${fLabHz(n.d.f.at(-1))}</td></tr>`; }).join("")}</tbody></table></div>`; VIEW = null; $("#limList").onclick = e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; UI.sel = new Set([tr.dataset.id]); UI.active = tr.dataset.id; renderTree(); renderView(); }; return; }
   if (VIEW.empty){ v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(VIEW.crumb)}</div><h2>${esc(VIEW.title)}</h2></div></div><div class="empty">This folder is empty. Drag measurements here, or right-click → <b>Import Excel here…</b></div>`; VIEW = null; return; }
   const { ms, metrics, freqs, series, hasW, totKeys } = VIEW; const W = UI.W;
@@ -1418,9 +1423,11 @@ function renderView(){
   below += `<div class="sec-h"><h4>Band table</h4><span class="hint">${isMaxMin(UI.metric) ? "Max/min totals are the energetic sum of bands, not the broadband value measured by the instrument." : "Totals = energetic sum of all bands."}${cwNode() ? ` Weighting curve “${esc(cwNode().name)}” added to every band (at its true mid-frequency) and narrowband line.` : ""}${(UI.qty && UI.qty !== "native" || UI.hw) && VIEW.anyVib ? ` Vibration ${UI.hw ? "Wm-weighted (ISO 2631-2) " : ""}${UI.qty && UI.qty !== "native" ? (UI.hw ? "and converted " : "converted ") : ""}for display: each band at its true mid-frequency, each narrowband line at its own frequency.` : ""}</span><span class="sp"><button class="btn" id="bCopy">Copy table</button><button class="btn" id="bXls">Export to Excel</button></span></div>
     <div class="tblwrap" id="btbl"></div>`;
 
+  if (VIEW.frfs && VIEW.frfs.length) below += frfSummaryHtml(VIEW.frfs);
   if (VIEW.rts && VIEW.rts.length) below += rtSummaryHtml(VIEW.rts);
   if (VIEW.aes && VIEW.aes.length) below += aeSummaryHtml(VIEW.aes);
   v.innerHTML = head + procPanelHtml() + ctr + chart + timeHtml() + below;
+  if (VIEW.frfs && VIEW.frfs.length) bindFrfSummary(VIEW.frfs);
   if (VIEW.rts && VIEW.rts.length) bindRtSummary(VIEW.rts);
   if (VIEW.aes && VIEW.aes.length) bindAeSummary(VIEW.aes);
   renderBandTable(); renderReadout(); drawChart(); bindProcPanel(); drawTime();
@@ -1947,7 +1954,7 @@ function reportDialog(){
   </div>`;
   // batch: one image per measurement of this folder, with the look of the open one
   const bctx = viewCtx(); const bfid = bctx ? (bctx.folder || vsKeyOf(bctx)) : null;
-  const bids = bfid && N(bfid) ? measUnder(bfid).filter(i => !["ae", "rt", "limit", "weight"].includes(N(i).d.kind)) : [];
+  const bids = bfid && N(bfid) ? measUnder(bfid).filter(i => !["ae", "rt", "limit", "weight", "frf", "coh"].includes(N(i).d.kind)) : [];
   if (bids.length > 1){
     b.querySelector(".repctl").insertAdjacentHTML("beforeend", `<div class="batch" style="display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:8px;border-top:1px solid var(--line)">
       <label><input type="checkbox" id="rAll" ${st.all ? "checked" : ""}> <b>Save all ${bids.length} measurements of “${esc(N(bfid).name)}”</b> with this appearance (one PNG each)</label>
@@ -2111,7 +2118,7 @@ function getNb(id){
   const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
   const i16 = new Int16Array(u.buffer); const f = new Float32Array(i16.length); for (let k = 0; k < i16.length; k++) f[k] = i16[k] === -32768 ? NaN : i16[k]/100; NBDEC.set(id, f); return f;
 }
-function usedNb(){ const o = {}; for (const n of Object.values(S.nodes)){ if (n.t !== "m") continue; if (n.d.nb && NBS[n.d.nb.ref]) o[n.d.nb.ref] = NBS[n.d.nb.ref]; if (n.d.kind === "ae") (n.d.T || []).forEach(x => { if (x.dec && NBS[x.dec.ref]) o[x.dec.ref] = NBS[x.dec.ref]; }); if (n.d.kind === "rt" && n.d.dec && NBS[n.d.dec.ref]) o[n.d.dec.ref] = NBS[n.d.dec.ref]; } return o; }
+function usedNb(){ const o = {}; for (const n of Object.values(S.nodes)){ if (n.t !== "m") continue; if (n.d.nb && NBS[n.d.nb.ref]) o[n.d.nb.ref] = NBS[n.d.nb.ref]; if (n.d.kind === "ae") (n.d.T || []).forEach(x => { if (x.dec && NBS[x.dec.ref]) o[x.dec.ref] = NBS[x.dec.ref]; }); if (n.d.kind === "rt" && n.d.dec && NBS[n.d.dec.ref]) o[n.d.dec.ref] = NBS[n.d.dec.ref]; for (const r of [n.d.reRef, n.d.imRef, n.d.cohRef]) if (r && NBS[r]) o[r] = NBS[r]; } return o; }
 
 /* exact (not band-rounded) weighting, for narrowband lines */
 function wAf(f){ if (f <= 0) return -200; const f2 = f*f; const ra = (12194**2*f2*f2)/((f2+20.6**2)*Math.sqrt((f2+107.7**2)*(f2+737.9**2))*(f2+12194**2)); return 20*Math.log10(ra) + 2.0; }
@@ -2187,6 +2194,7 @@ async function loadUnv(file){
 async function handleUnv(file, dest){
   const res = await loadUnv(file); if (!res) return;
   if (!res.chans.length && !(res.specs && res.specs.length)){ toast(`No time histories or spectra (dataset 58) found in ${file.name}`); return; }
+  if (isTestUnv(res)){ await unvTestDialog(file, res, dest); return; }   // impact / modal test: FRF, coherence, PSD, 1/3 octave and time together
   if (res.specs && res.specs.length) await unvSpecDialog(file, res.specs, dest);
   if (res.chans.length) await unvDialog(file, res, dest);
 }
@@ -3460,6 +3468,302 @@ function renderWeight(n){
   draw(); LIMDRAW = draw;
 }
 
+/* ---------- impact / modal test from UNV: FRF, coherence, PSD, 1/3 octave and time signals ---------- */
+const F32C = new Map();
+function storeF32(a){ const f = a instanceof Float32Array ? a : Float32Array.from(a); const b = new Uint8Array(f.buffer.slice(0)); let s = ""; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  const id = "f32" + Date.now().toString(36) + (nbSeq++).toString(36); NBS[id] = btoa(s); F32C.set(id, f); return id; }
+function getF32(id){ if (F32C.has(id)) return F32C.get(id); const s = NBS[id]; if (!s) return null; const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); const f = new Float32Array(u.buffer); F32C.set(id, f); return f; }
+const TEST_KIND = c => c.ftype === 4 ? "frf" : c.ftype === 6 ? "coh" : c.ftype === 9 ? "psd" : c.xs ? "oct" : c.ftype === 2 ? "psd" : "spec";
+const TEST_LAB = { frf: "FRF", coh: "Coherence", psd: "PSD", oct: "1/3 octave", spec: "Spectrum", time: "Time" };
+const TEST_DIR = { frf: "FRF", coh: "Coherence", psd: "PSD", oct: "1-3 octave", spec: "Spectrum", time: "Time" };
+const isTestUnv = res => (res.specs || []).some(c => [4, 6, 9].includes(c.ftype) || c.xs);
+const shortCh = c => chName(c).replace(/^CH\d+_/i, "");
+/* driving point: response = reference (node and direction), or the channel named like the impact point in the file name (01_L1Z_HARD → LZ) */
+function guessDp(file, frfs){
+  const byNode = frfs.find(c => c.respNode && c.respNode === c.refNode && Math.abs(c.respDir) === Math.abs(c.refDir)); if (byNode) return byNode;
+  const toks = file.name.replace(/\.[^.]+$/, "").split(/[_\-\s.]+/).map(t => t.toUpperCase().replace(/[^A-Z]/g, "")).filter(t => t.length >= 2);
+  return frfs.find(c => toks.includes(shortCh(c).toUpperCase().replace(/[^A-Z]/g, ""))) || null;
+}
+function unvTestDialog(file, res, dest){
+  return new Promise(done => {
+    const items = [...res.specs.map(c => ({ c, k: TEST_KIND(c) })), ...res.chans.map(c => ({ c, k: "time" }))];
+    const order = ["frf", "coh", "psd", "oct", "spec", "time"]; items.sort((a, b) => order.indexOf(a.k) - order.indexOf(b.k));
+    const frfs = items.filter(x => x.k === "frf").map(x => x.c); const dp = guessDp(file, frfs);
+    const b = document.createElement("div"); b.style.display = "contents";
+    const refOf = c => { const m = String(c.id2 || "").match(/^\s*CH\.?\s*\d+\s*:\s*([^:]+?)\s*(?::.*)?$/i); return m ? m[1].trim() : (c.id2 && !/^none$/i.test(c.id2.trim()) ? c.id2.trim() : ""); };
+    b.innerHTML = `<div><b>${esc(file.name)}</b> · ${items.length} blocks: ${order.filter(k => items.some(x => x.k === k)).map(k => `${items.filter(x => x.k === k).length} ${TEST_LAB[k]}`).join(" · ")}</div>
+      <div class="hint">Each type goes to its own subfolder, so FRF and coherence never mix with level spectra. Tick the FRF measured at the impact point (driving point): its mass and stiffness lines can then be fitted.</div>
+      <div class="tblwrap" style="max-height:330px;overflow:auto"><table class="list" id="tTbl"><thead><tr><th></th><th>Type</th><th>Response</th><th>Reference</th><th>Units</th><th class="n">Points</th><th>Driving point</th></tr></thead><tbody>
+      ${items.map((x, i) => `<tr><td><input type="checkbox" data-i="${i}" ${x.k === "time" ? "" : "checked"} aria-label="Import"></td><td>${TEST_LAB[x.k]}</td><td>${esc(chName(x.c))}</td><td>${esc(x.k === "frf" || x.k === "coh" ? refOf(x.c) : "")}</td><td>${esc(x.c.units || "—")}</td><td class="n">${x.c.n || (x.c.data && x.c.data.length) || ""}</td><td>${x.k === "frf" ? `<input type="radio" name="tDp" value="${i}" ${x.c === dp ? "checked" : ""} aria-label="Driving point">` : ""}</td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="hint">Time signals are not ticked by default: their spectra are already in the file. Tick them to keep the waveforms or to calculate other bands.</div>
+      <div>Destination:</div>`;
+    const fp = folderPicker(dest); b.append(fp);
+    modal("Import test (UNV)", b, [
+      { label: "Cancel", run: () => done() },
+      { label: "Import", primary: true, run: () => {
+        const sel = [...b.querySelectorAll("input[data-i]:checked")].map(x => items[+x.dataset.i]); if (!sel.length){ toast("Tick at least one block"); return false; }
+        const dpI = b.querySelector("input[name=tDp]:checked"); const dpC = dpI ? items[+dpI.value].c : null;
+        let base; const timeIds = []; const made = [];
+        commit(() => {
+          base = addFolder(file.name.replace(/\.[^.]+$/, ""), fp.value);
+          const sub = {}; const dir = k => sub[k] || (sub[k] = addFolder(TEST_DIR[k], base));
+          const cohByResp = {};
+          for (const { c, k } of sel){
+            const start = unvDate(c, file.lastModified), name = chName(c);
+            if (k === "time"){
+              const d = { kind: "time", start, dur: fmtDur(c.dur), src: file.name, f: [], m: {}, w: {}, meta: { Units: c.units || "—", Sampling: `${+c.fs.toFixed(2)} Hz` }, ts: { key: c.key, file: file.name, idx: c.idx, units: c.units, fs: c.fs, dur: c.dur, q: c.q }, proc: { ...PDEF, ...(UI.lastP || {}) } };
+              timeIds.push(addMeas(name, d, dir("time"))); continue;
+            }
+            const fr = c.xs ? Array.from(c.xs) : Array.from({ length: c.n }, (_, i) => c.x0 + i*c.dx);
+            if (k === "coh"){ const id = addMeas(`${name} · coherence`, { kind: "coh", start, src: file.name, f0: c.x0, df: c.dx, n: c.n, cohRef: storeF32(c.data), resp: name, refName: refOf(c) }, dir("coh")); cohByResp[name] = id; made.push(id); continue; }
+            if (k === "frf"){
+              const ru = c.units || "", rq = { q: c.q, f: c.qf || 1 }; const fu = (c.id2 || "").split(":").pop().trim() || "N";
+              const d = { kind: "frf", start, src: file.name, f0: c.x0, df: c.dx, n: c.n, reRef: storeF32(c.re || c.data), imRef: storeF32(c.im || new Float32Array(c.n)), resp: name, refName: refOf(c), rq: rq.q, rf: rq.f, units: `${ru}/${fu}`, dp: c === dpC };
+              made.push(addMeas(`${name} / ${refOf(c) || "ref"}`, d, dir("frf"))); continue;
+            }
+            const Q = { q: c.q || "other", f: c.qf || 1 }; const q = Q.q; const ref = q === "sound" ? PDEF.refP : q === "accel" ? PDEF.refA : q === "vel" ? PDEF.refV : 1;
+            const metric = q === "sound" ? "LZeq" : q === "accel" ? "La" : q === "vel" ? "Lv" : (/^n$/i.test((c.units || "").trim()) ? "LF" : "L");
+            const rlab = q === "other" ? `dB re 1 ${c.units || "unit"}` : refLabel(q, ref);
+            if (k === "oct"){   // band levels as given by the analyser (RMS per band)
+              const F = [], L = []; fr.forEach((f, i) => { const g = snapBand(f, "1/3"); const v = c.data[i]*(Q.f || 1); if (g && v > 0){ F.push(g); L.push(Math.round(20*Math.log10(v/ref)*100)/100); } });
+              made.push(addMeas(name, { kind: "oct", start, dur: "", src: file.name, f: F, m: { [metric]: L }, w: { [metric]: metric === "LZeq" ? "Z" : null }, ref: rlab, ts: { q, units: c.units }, proc: { refA: PDEF.refA, refV: PDEF.refV, refP: PDEF.refP }, meta: { Values: `${c.units || "—"} · 1/3 octave RMS from the analyser`, Reference: rlab } }, dir("oct"))); continue;
+            }
+            // PSD (or spectrum): lines kept as narrowband, bands from the lines
+            const o = { pw: k === "psd" ? 3 : 1, k: 1, qf: Q.f || 1, df: c.dx, win: k === "psd" ? 1 : 1.5, cut: c.dx*0.99, bands: "1/3", ref };
+            const { n, lv } = specBands(fr, c.data, o);
+            const len = Math.round(fr[fr.length - 1]/c.dx) + 1, arr = new Float32Array(len).fill(NaN);
+            for (let j = 0; j < fr.length; j++){ const kk = Math.round(fr[j]/c.dx); if (fr[j] >= o.cut && kk < len){ const x = specPow(c.data, j, o); if (x > 0) arr[kk] = 10*Math.log10(x/(ref*ref)); } }
+            made.push(addMeas(name, { kind: "fft", start, dur: "", src: file.name, f: n.map(nominal), m: { [metric]: lv }, w: { [metric]: metric === "LZeq" ? "Z" : null }, ref: rlab, nb: { ref: storeNb(arr), df: c.dx }, ts: { q, units: c.units }, proc: { refA: PDEF.refA, refV: PDEF.refV, refP: PDEF.refP },
+              meta: { Values: `${c.units || "—"} · ${k === "psd" ? "PSD (units²/Hz)" : "linear RMS"}`, Spectrum: `${c.n} lines · Δf ${+c.dx.toFixed(4)} Hz`, Reference: rlab } }, dir(k)));
+          }
+          // each FRF knows its coherence
+          for (const id of made){ const d = N(id).d; if (d.kind === "frf" && cohByResp[d.resp]) d.cohId = cohByResp[d.resp]; }
+          N(fp.value).open = true; N(base).open = true;
+        });
+        UI.sel = new Set([base]); UI.active = base; UI.hidden.clear(); renderTree(); renderView();
+        toast(`Test imported: ${made.length + timeIds.length} items`, "Undo", undo);
+        if (timeIds.length) recalc(timeIds, { ...PDEF, ...(UI.lastP || {}) }).then(done); else done();
+      } }
+    ], true);
+  });
+}
+/* FRF in any of the usual forms, from the measured one (acceleration, velocity or displacement over force) */
+const FRF_T = { acc: { l: "Accelerance", s: "A", u: "(m/s²)/N" }, mob: { l: "Mobility", s: "Y", u: "(m/s)/N" }, rec: { l: "Receptance", s: "H", u: "m/N" }, dst: { l: "Dynamic stiffness", s: "K", u: "N/m" }, ams: { l: "Apparent mass", s: "M", u: "kg" }, imp: { l: "Mechanical impedance", s: "Z", u: "N·s/m" } };
+function frfTo(t, ar, ai, w){   // from accelerance (ar + j·ai) at ω to the form t
+  const inv = (x, y) => { const d = x*x + y*y; return d > 0 ? [x/d, -y/d] : [NaN, NaN]; };
+  if (t === "acc") return [ar, ai];
+  if (t === "mob") return [ai/w, -ar/w];
+  if (t === "rec") return [-ar/(w*w), -ai/(w*w)];
+  if (t === "dst") return inv(-ar/(w*w), -ai/(w*w));
+  if (t === "ams") return inv(ar, ai);
+  if (t === "imp") return inv(ai/w, -ar/w);
+  return [ar, ai];
+}
+function frfData(d, t){
+  const key = `${d.reRef}|${t}`; if (frfData.c && frfData.c.key === key) return frfData.c.v;
+  const re = getF32(d.reRef), im = getF32(d.imRef), n = re ? re.length : 0; const f = new Float64Array(n), mag = new Float64Array(n), ph = new Float64Array(n);
+  const sf = d.rf || 1;
+  for (let i = 0; i < n; i++){ const fi = d.f0 + i*d.df; f[i] = fi; const w = 2*Math.PI*fi; let ar = re[i]*sf, ai = im[i]*sf;
+    if (d.rq === "vel"){ const r = -w*ai, j = w*ar; ar = r; ai = j; } else if (d.rq === "disp"){ ar = -w*w*ar; ai = -w*w*ai; }
+    const [x, y] = fi > 0 ? frfTo(t, ar, ai, w) : [NaN, NaN]; mag[i] = Math.hypot(x, y); ph[i] = Math.atan2(y, x)*180/Math.PI; }
+  const v = { f, mag, ph }; frfData.c = { key, v }; return v;
+}
+function frfDataNc(d, t){ const k = frfData.c; const v = frfData(d, t); frfData.c = k; return v; }
+/* mass and stiffness lines of a driving point: k = median of ω²/|A| over the stiffness range, m = median of 1/|A| over the mass range */
+function frfMassStiff(d){
+  const re = getF32(d.reRef), im = getF32(d.imRef); if (!re) return null; const sf = d.rf || 1;
+  const fit = d.fit || {}; const fmax = d.f0 + (re.length - 1)*d.df;
+  const coh = d.cohId && N(d.cohId) ? getF32(N(d.cohId).d.cohRef) : null;
+  const cohOk = i => !coh || coh[i] >= 0.8;
+  // default ranges: from where the coherence becomes good (1/3-octave median ≥ 0.9) — stiffness over two octaves, mass over the top 1/5 of the span
+  let fGood = Math.max(d.df*4, 2);
+  if (coh){ for (let i = 1; i < coh.length; i++){ const f = d.f0 + i*d.df; const a = Math.round(f/1.12/d.df), b = Math.round(f*1.12/d.df); if (b - a < 3) continue; const w = []; for (let j = a; j <= b && j < coh.length; j++) w.push(coh[j]); w.sort((x, y) => x - y); if (w[Math.floor(w.length/2)] >= 0.9){ fGood = f; break; } } }
+  const ka = fit.ka ?? fGood, kb = fit.kb ?? Math.min(fmax, ka*4), ma = fit.ma ?? fmax/5, mb = fit.mb ?? fmax;
+  const A = i => { const fi = d.f0 + i*d.df, w = 2*Math.PI*fi; let ar = re[i]*sf, ai = im[i]*sf; if (d.rq === "vel"){ const r = -w*ai, j = w*ar; ar = r; ai = j; } else if (d.rq === "disp"){ ar = -w*w*ar; ai = -w*w*ai; } return Math.hypot(ar, ai); };
+  const med = a => { a = a.filter(x => isFinite(x) && x > 0).sort((x, y) => x - y); return a.length ? a[Math.floor(a.length/2)] : null; };
+  const ks = [], ms = [];
+  for (let i = 0; i < re.length; i++){ const fi = d.f0 + i*d.df; if (!(fi > 0)) continue; if (!cohOk(i)) continue; const w = 2*Math.PI*fi, a = A(i); if (fi >= ka && fi <= kb) ks.push(w*w/a); if (fi >= ma && fi <= mb) ms.push(1/a); }
+  const k = med(ks), m = med(ms); return { k, m, ka, kb, ma, mb, f0: k && m ? Math.sqrt(k/m)/(2*Math.PI) : null };
+}
+const supNum = e => String(e).replace(/-/g, "⁻").replace(/\d/g, x => "⁰¹²³⁴⁵⁶⁷⁸⁹"[x]);
+const fmtSci = (v, p = 3) => { if (!isFinite(v)) return "—"; if (v === 0) return "0"; const e = Math.floor(Math.log10(Math.abs(v))); if (e >= -2 && e <= 4) return String(+v.toPrecision(p)); return `${+(v/Math.pow(10, e)).toPrecision(p)}·10${supNum(e)}`; };
+/* plot: magnitude (log), phase and coherence panels on a log frequency axis */
+function drawFrf(c, X, Y, W, H, K, o){
+  const sc = o.scale || 1, fs = n => `${n*sc*FS}px`;
+  const curves = o.curves.filter(cv => cv.f && cv.f.length); if (!curves.length){ c.fillStyle = K.muted; c.font = `${fs(12)} ${K.sans}`; c.textAlign = "center"; c.fillText("No data", X + W/2, Y + H/2); return null; }
+  const fMinAll = Math.max(...curves.map(cv => cv.f[1] || cv.f[0] || 1)), fMaxAll = Math.max(...curves.map(cv => cv.f[cv.f.length - 1]));
+  const fa = o.z ? Math.max(fMinAll, o.z[0]) : (o.fmin || fMinAll), fb = o.z ? Math.min(fMaxAll, o.z[1]) : fMaxAll;
+  const L = X + 70*sc, R = 14*sc, Tp = Y + (o.head ? 8 : 10)*sc, B = 40*sc; const pw = X + W - R - L;
+  const showPh = o.phase !== false && curves.some(cv => cv.ph), showCoh = curves.some(cv => cv.coh);
+  const gap = 12*sc, hAll = Y + H - B - Tp; const hPh = showPh ? hAll*0.2 : 0, hCo = showCoh ? hAll*0.18 : 0; const hM = hAll - hPh - hCo - (showPh ? gap : 0) - (showCoh ? gap : 0);
+  const lA = Math.log(fa), lB = Math.log(fb); const xF = f => L + (Math.log(f) - lA)/(lB - lA)*pw; const fX = x => Math.exp(lA + (x - L)/pw*(lB - lA));
+  // magnitude range: decades around what is visible
+  let vmin = Infinity, vmax = -Infinity; const vals = [];
+  for (const cv of curves) for (let i = 0; i < cv.f.length; i++){ const f = cv.f[i]; if (f < fa || f > fb) continue; const v = cv.mag[i]; if (v > 0 && isFinite(v)){ vals.push(v); if (v > vmax) vmax = v; } }
+  for (const ln of o.lines || []) for (const f of [fa, fb]){ const v = ln.fn(f); if (v > 0 && isFinite(v)) vals.push(v); }
+  vals.sort((a, b) => a - b); vmin = vals.length ? vals[Math.floor(vals.length*0.005)] : 1e-3; if (!(vmax > 0)) vmax = 1;
+  const db = o.ydb; const tY = v => db ? 20*Math.log10(v) : Math.log10(v);
+  let lo = db ? Math.floor(tY(vmin)/10)*10 : Math.floor(tY(vmin)), hi = db ? Math.ceil(tY(vmax)/10)*10 + (tY(vmax) % 10 > 7 ? 10 : 0) : Math.ceil(tY(vmax) + 0.05); if (!(hi > lo)) hi = lo + (db ? 20 : 1);
+  if (!db && hi - lo > 9) lo = hi - 9;
+  const yM = v => Tp + hM*(1 - (tY(v) - lo)/(hi - lo));
+  const Tph = Tp + hM + gap, yP = p => Tph + hPh*(1 - (p + 180)/360);
+  const Tco = Tp + hM + (showPh ? gap + hPh : 0) + gap, yC = v => Tco + hCo*(1 - v);
+  c.save(); c.lineWidth = sc; c.font = `${fs(10.5)} ${K.mono}`;
+  // grid and axes
+  const panel = (t, h) => { c.strokeStyle = K.muted; c.beginPath(); c.moveTo(L + .5, t); c.lineTo(L + .5, t + h); c.lineTo(L + pw, t + h); c.stroke(); };
+  const ticks = []; for (let e = Math.floor(Math.log10(fa)); e <= Math.ceil(Math.log10(fb)); e++) for (const m of [1, 2, 5]){ const f = m*Math.pow(10, e); if (f >= fa*0.999 && f <= fb*1.001) ticks.push(f); }
+  const gridX = (t, h) => ticks.forEach(f => { const x = Math.round(xF(f)) + .5; c.strokeStyle = K.line; c.setLineDash(String(f).startsWith("1") ? [] : [2*sc, 3*sc]); c.beginPath(); c.moveTo(x, t); c.lineTo(x, t + h); c.stroke(); c.setLineDash([]); });
+  gridX(Tp, hM); if (showPh) gridX(Tph, hPh); if (showCoh) gridX(Tco, hCo);
+  c.textAlign = "right"; c.textBaseline = "middle"; c.fillStyle = K.muted;
+  const stp = db ? ((hi - lo) > 80 ? 20 : 10) : 1;
+  for (let v = lo; v <= hi + 1e-9; v += stp){ const yy = Math.round(Tp + hM*(1 - (v - lo)/(hi - lo))) + .5; c.strokeStyle = K.line; c.beginPath(); c.moveTo(L, yy); c.lineTo(L + pw, yy); c.stroke(); c.fillText(db ? String(v) : `10${supNum(v)}`, L - 6*sc, yy); }
+  if (showPh) [-180, -90, 0, 90, 180].forEach(p => { const yy = Math.round(yP(p)) + .5; c.strokeStyle = K.line; c.beginPath(); c.moveTo(L, yy); c.lineTo(L + pw, yy); c.stroke(); if (p % 180 === 0 || hPh > 70*sc) c.fillText(`${p}°`, L - 6*sc, yy); });
+  if (showCoh) [0, 0.5, 1].forEach(v => { const yy = Math.round(yC(v)) + .5; c.strokeStyle = K.line; c.beginPath(); c.moveTo(L, yy); c.lineTo(L + pw, yy); c.stroke(); c.fillText(String(v), L - 6*sc, yy); });
+  panel(Tp, hM); if (showPh) panel(Tph, hPh); if (showCoh) panel(Tco, hCo);
+  c.textAlign = "center"; c.textBaseline = "top"; const yb = Y + H - B;
+  ticks.forEach(f => { c.fillStyle = String(f).startsWith("1") ? K.ink : K.muted; c.fillText(fmtTickF(f), xF(f), yb + 6*sc); });
+  c.fillStyle = K.muted; c.font = `${fs(11)} ${K.sans}`; c.fillText(`Frequency [Hz]${o.z ? ` · zoom ${fmtTickF(fa)}–${fmtTickF(fb)} Hz · double-click: all` : ""}`, L + pw/2, yb + 22*sc);
+  const vlab = (t, h, txt) => { c.save(); c.translate(X + 13*sc, t + h/2); c.rotate(-Math.PI/2); c.textAlign = "center"; c.textBaseline = "middle"; c.fillStyle = K.muted; c.font = `${fs(11)} ${K.sans}`; c.fillText(txt, 0, 0); c.restore(); };
+  vlab(Tp, hM, o.yLab || "|FRF|"); if (showPh) vlab(Tph, hPh, "Phase"); if (showCoh) vlab(Tco, hCo, "Coh.");
+  // fit ranges (driving point)
+  for (const r of o.ranges || []){ c.fillStyle = r.color; c.globalAlpha = .08; c.fillRect(xF(Math.max(fa, r.a)), Tp, Math.max(0, xF(Math.min(fb, r.b)) - xF(Math.max(fa, r.a))), hM); c.globalAlpha = 1; }
+  // curves: per-pixel min/max so 25 600 lines draw cleanly
+  const strip = (cv, arr, yf, t, h, lw, alpha) => {
+    c.save(); c.beginPath(); c.rect(L, t - 1, pw, h + 2); c.clip(); c.strokeStyle = cv.color; c.lineWidth = lw; c.globalAlpha = alpha; c.beginPath();
+    let px = null, mn = 0, mx = 0, first = true;
+    const flush = () => { if (px == null) return; if (first){ c.moveTo(px, mn); first = false; } else c.lineTo(px, mn); if (mx !== mn) c.lineTo(px, mx); };
+    for (let i = 0; i < cv.f.length; i++){ const f = cv.f[i]; if (f < fa || f > fb) continue; const v = arr[i]; if (!isFinite(v)) continue; const yv = yf(v); if (!isFinite(yv)) continue; const x = Math.round(xF(f));
+      if (x !== px){ flush(); px = x; mn = mx = yv; } else { if (yv < mn) mn = yv; if (yv > mx) mx = yv; } }
+    flush(); c.stroke(); c.restore();
+  };
+  for (const cv of curves){ strip(cv, cv.mag, v => v > 0 ? yM(v) : NaN, Tp, hM, (cv.lw || 1.4)*sc, 1);
+    if (showPh && cv.ph) strip(cv, cv.ph, yP, Tph, hPh, 1*sc, .85);
+    if (showCoh && cv.coh) strip(cv, cv.coh, yC, Tco, hCo, 1*sc, .85); }
+  // mass / stiffness lines
+  c.save(); c.beginPath(); c.rect(L, Tp, pw, hM); c.clip();
+  for (const ln of o.lines || []){ c.strokeStyle = ln.color; c.lineWidth = 2*sc; c.setLineDash([7*sc, 4*sc]); c.beginPath(); for (let k = 0; k <= 60; k++){ const f = fa*Math.pow(fb/fa, k/60); const v = ln.fn(f); const yy = yM(v); k ? c.lineTo(xF(f), yy) : c.moveTo(xF(f), yy); } c.stroke(); c.setLineDash([]);
+    c.font = `600 ${fs(11)} ${K.sans}`; const tw = c.measureText(ln.name).width; let fl = Math.min(Math.max(ln.at || Math.sqrt(fa*fb), fa), fb); let xl = xF(fl) + 4*sc; if (xl + tw > L + pw - 4*sc){ xl = L + pw - 4*sc - tw; fl = fX(xl); }
+    const v = ln.fn(fl); let yl = yM(v) - 4*sc; yl = Math.max(Tp + 14*sc, Math.min(Tp + hM - 4*sc, yl)); c.fillStyle = K.panel; c.globalAlpha = .8; c.fillRect(xl - 2*sc, yl - 13*sc, tw + 4*sc, 14*sc); c.globalAlpha = 1; c.fillStyle = ln.color; c.textAlign = "left"; c.textBaseline = "bottom"; c.fillText(ln.name, xl, yl); }
+  c.restore();
+  // cursor
+  let cur = null;
+  if (o.cur && o.cur >= fa && o.cur <= fb){ const x = Math.round(xF(o.cur)) + .5; c.strokeStyle = K.cur; c.lineWidth = 1.2*sc; c.setLineDash([4*sc, 3*sc]); c.beginPath(); c.moveTo(x, Tp); c.lineTo(x, (showCoh ? Tco + hCo : showPh ? Tph + hPh : Tp + hM)); c.stroke(); c.setLineDash([]);
+    cur = curves.map(cv => { let i = Math.round((o.cur - cv.f[0])/((cv.f[1] - cv.f[0]) || 1)); i = Math.max(0, Math.min(cv.f.length - 1, i)); const v = cv.mag[i]; if (v > 0) drawMarker(c, "circle", x, yM(v), 4*sc, K.panel, cv.color, 1.8*sc); return { name: cv.name, f: cv.f[i], mag: v, ph: cv.ph ? cv.ph[i] : null, coh: cv.coh ? cv.coh[i] : null, color: cv.color }; }); }
+  c.restore();
+  return { L, pw, fa, fb, fMinAll, fMaxAll, fX, cur, Tp, H: Y + H - B };
+}
+let FRFV = null, FRFSUM = null;
+function frfCurve(n, t, color){
+  const d = n.d;
+  if (d.kind === "coh"){ const v = getF32(d.cohRef); const f = Float64Array.from({ length: v.length }, (_, i) => d.f0 + i*d.df); return { name: n.name, f, mag: new Float64Array(v.length).fill(NaN), coh: v, color }; }
+  const fd = frfDataNc(d, t); const cn = d.cohId && N(d.cohId) ? getF32(N(d.cohId).d.cohRef) : null;
+  return { name: n.name, f: fd.f, mag: fd.mag, ph: fd.ph, coh: cn, color, lw: 1.5 };
+}
+function msLines(d, t){
+  const ms = frfMassStiff(d); if (!ms) return { lines: [], ranges: [], ms };
+  const lines = []; const conv = (ar, f) => { const w = 2*Math.PI*f; const [x, y] = frfTo(t, ar, 0, w); return Math.hypot(x, y); };
+  if (ms.k) lines.push({ name: `stiffness k = ${fmtSci(ms.k)} N/m (${fmtSci(ms.k/1e6)} kN/mm)`, color: "#d9730d", fn: f => conv(-Math.pow(2*Math.PI*f, 2)/ms.k, f), at: ms.ka });
+  if (ms.m) lines.push({ name: `mass m = ${fmtSci(ms.m)} kg`, color: "#7a3fb0", fn: f => conv(1/ms.m, f), at: ms.ma });
+  return { lines, ranges: [{ a: ms.ka, b: ms.kb, color: "#d9730d" }, { a: ms.ma, b: ms.mb, color: "#7a3fb0" }], ms };
+}
+function renderFrf(n){
+  const v = $("#view"); const d = n.d; const t = UI.frfT || "acc"; FRFV = { id: n.id };
+  const isCoh = d.kind === "coh";
+  const ms = !isCoh && d.dp ? frfMassStiff(d) : null;
+  const crumb = esc(["FILES", ...pathOf(n.parent)].join(" \\ ")) + (isCoh ? " · coherence" : " · FRF");
+  v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${crumb}</div><h2>${esc(n.name)}</h2></div>
+    ${ms && ms.k && ms.m ? `<div class="big"><div><div class="k">Stiffness k</div><div class="v">${fmtSci(ms.k/1e6)}<small>kN/mm</small></div></div><div class="alt"><div class="k">Mass m</div><div class="v">${fmtSci(ms.m)}<small>kg</small></div></div><div class="alt"><div class="k">Lines cross at</div><div class="v">${ms.f0 ? ms.f0.toFixed(1) : "—"}<small>Hz</small></div></div></div>` : ""}</div>
+    <div class="info"><div><span>Source</span><b>${esc(d.src || "—")}</b></div>${!isCoh ? `<div><span>Response</span><b>${esc(d.resp || "—")}</b></div><div><span>Reference</span><b>${esc(d.refName || "—")}</b></div><div><span>Measured as</span><b>${esc(d.units || "")}</b></div>` : ""}<div><span>Lines</span><b>${d.n} · Δf ${+d.df.toFixed(4)} Hz</b></div></div>
+    ${!isCoh ? `<div class="ctrls">
+      <label for="fT">Show as <select id="fT">${Object.entries(FRF_T).map(([k, x]) => `<option value="${k}" ${k === t ? "selected" : ""}>${x.l} ${x.s} [${x.u}]</option>`).join("")}</select></label>
+      <label>Y axis <span class="seg" id="fY"><button data-y="log" aria-pressed="${!UI.frfDb}">Log</button><button data-y="db" aria-pressed="${!!UI.frfDb}">dB</button></span></label>
+      <label><input type="checkbox" id="fPh" ${UI.frfPh !== false ? "checked" : ""}> Phase</label>
+      <label><input type="checkbox" id="fDp" ${d.dp ? "checked" : ""}> Driving point (response at the impact point)</label>
+      <span class="sp" style="display:flex;gap:6px"><button class="btn primary" id="fImg">Report image…</button></span></div>` : ""}
+    ${ms ? `<div class="proc"><div class="grid">
+      <label>Stiffness line fitted on <input type="number" id="fKa" step="any" value="${+ms.ka.toFixed(2)}"> – <input type="number" id="fKb" step="any" value="${+ms.kb.toFixed(2)}"> Hz</label>
+      <label>Mass line fitted on <input type="number" id="fMa" step="any" value="${+ms.ma.toFixed(1)}"> – <input type="number" id="fMb" step="any" value="${+ms.mb.toFixed(1)}"> Hz</label>
+      <label><input type="checkbox" id="fMs" ${UI.frfMs !== false ? "checked" : ""}> Draw the lines</label></div>
+      <div class="hint">Driving point: k = median of ω²/|A| over the stiffness range (stiffness-controlled, below the first resonance), m = median of 1/|A| over the mass range (mass-controlled); only lines with coherence ≥ 0.8 are used. The lines are drawn in the chosen form of the FRF. Pick ranges where the curve follows the line and the coherence is close to 1.</div></div>` : ""}
+    <div class="chartwrap"><div class="chartbox" style="height:560px"><canvas id="fC" tabindex="0" aria-label="FRF"></canvas></div><div class="readout" id="fR"></div></div>`;
+  const re = () => renderView();
+  if ($("#fT")) $("#fT").onchange = e => { UI.frfT = e.target.value; re(); };
+  if ($("#fY")) $("#fY").onclick = e => { const b = e.target.closest("button[data-y]"); if (!b) return; UI.frfDb = b.dataset.y === "db"; re(); };
+  if ($("#fPh")) $("#fPh").onchange = e => { UI.frfPh = e.target.checked; drawFrfView(); };
+  if ($("#fDp")) $("#fDp").onchange = e => { commit(() => { N(n.id).d.dp = e.target.checked; }); re(); };
+  if ($("#fMs")) $("#fMs").onchange = e => { UI.frfMs = e.target.checked; drawFrfView(); };
+  ["fKa", "fKb", "fMa", "fMb"].forEach(id => { const el = $("#" + id); if (el) el.onchange = () => { const g = x => parseFloat($("#" + x).value); commit(() => { N(n.id).d.fit = { ka: g("fKa"), kb: g("fKb"), ma: g("fMa"), mb: g("fMb") }; }); re(); }; });
+  if ($("#fImg")) $("#fImg").onclick = () => frfImageDialog([n.id]);
+  drawFrfView();
+}
+function frfOpts(ids, K){
+  const t = UI.frfT || "acc"; const nodes = ids.map(N).filter(Boolean);
+  const curves = nodes.map((n, i) => frfCurve(n, t, nodes.length === 1 ? NB_BLUE : K.pal[i % K.pal.length]));
+  let lines = [], ranges = []; const one = nodes.length === 1 && nodes[0].d.kind === "frf" && nodes[0].d.dp;
+  if (one && UI.frfMs !== false){ const r = msLines(nodes[0].d, t); lines = r.lines; ranges = r.ranges; }
+  const allCoh = nodes.every(n => n.d.kind === "coh");
+  return { curves, lines, ranges, ydb: !!UI.frfDb, yLab: allCoh ? "" : `${FRF_T[t].s}  [${UI.frfDb ? "dB re 1 " : ""}${FRF_T[t].u}]`, phase: allCoh ? false : (nodes.length === 1 && UI.frfPh !== false), cur: UI.frfCur, z: UI.frfZ };
+}
+function drawFrfView(){
+  if (!FRFV) return; const n = N(FRFV.id); if (!n) return; const g = canvasInto("fC"); if (!g) return; const K = screenColors();
+  const geo = drawFrf(g.c, 0, 0, g.W, g.H, K, frfOpts([n.id], K)); FRFV.geo = geo; frfReadout(geo, "fR"); bindFrfCanvas("fC", () => FRFV && FRFV.geo, drawFrfView);
+}
+function frfReadout(geo, id){ const el = $("#" + id); if (!el) return; const t = UI.frfT || "acc";
+  if (!geo || !geo.cur){ el.innerHTML = `<h3>Cursor</h3><div class="hint">Click on the chart to read magnitude, phase and coherence at a frequency. Mouse wheel zooms the frequency axis.</div>`; return; }
+  el.innerHTML = `<h3>Cursor</h3><div class="f">${geo.cur[0] ? (+geo.cur[0].f.toFixed(2)) + " Hz" : ""}</div><table>${geo.cur.map(r => `<tr><td class="nm" title="${esc(r.name)}"><span style="display:inline-block;width:10px;height:3px;background:${r.color};vertical-align:middle;margin-right:5px"></span>${esc(r.name)}</td><td class="vl">${r.mag > 0 ? fmtSci(r.mag, 4) : ""}</td></tr>${r.ph != null ? `<tr><td class="nm" style="color:var(--muted)">phase</td><td class="vl">${r.ph.toFixed(1)}°</td></tr>` : ""}${r.coh != null ? `<tr><td class="nm" style="color:var(--muted)">coherence</td><td class="vl">${(+r.coh).toFixed(3)}</td></tr>` : ""}`).join("")}</table><div class="hint">${esc(FRF_T[t].l)} in ${esc(FRF_T[t].u)}. Wheel: zoom · double-click: all.</div>`;
+}
+function bindFrfCanvas(id, geoFn, redraw){
+  const cv = $("#" + id); if (!cv) return;
+  cv.onclick = e => { const geo = geoFn(); if (!geo) return; const r = cv.getBoundingClientRect(); const x = e.clientX - r.left; if (x < geo.L || x > geo.L + geo.pw) return; UI.frfCur = geo.fX(x); redraw(); };
+  cv.onwheel = e => { const geo = geoFn(); if (!geo) return; const r = cv.getBoundingClientRect(); const x = e.clientX - r.left; if (x < geo.L || x > geo.L + geo.pw) return; e.preventDefault();
+    const u = (x - geo.L)/geo.pw, k = e.deltaY > 0 ? 1.25 : 0.8; const la = Math.log(geo.fa), lb = Math.log(geo.fb), lc = la + u*(lb - la); let a = Math.exp(lc - (lc - la)*k), b = Math.exp(lc + (lb - lc)*k);
+    a = Math.max(geo.fMinAll, a); b = Math.min(geo.fMaxAll, b); if (b/a < 1.05) return; UI.frfZ = (a <= geo.fMinAll*1.0001 && b >= geo.fMaxAll*0.9999) ? null : [a, b]; redraw(); };
+  cv.ondblclick = () => { UI.frfZ = null; redraw(); };
+}
+/* folder: all its FRFs (or coherences) together */
+function frfSummaryHtml(ids){
+  const fr = ids.filter(id => N(id).d.kind === "frf"), co = ids.filter(id => N(id).d.kind === "coh"); const t = UI.frfT || "acc";
+  return `<div class="sec-h"><h4>${fr.length ? `FRF (${fr.length})` : `Coherence (${co.length})`}</h4><span class="hint">Click a name to open it · the driving point is marked ●</span><span class="sp" style="display:flex;gap:6px">${fr.length ? `<select id="fsT" aria-label="FRF form">${Object.entries(FRF_T).map(([k, x]) => `<option value="${k}" ${k === t ? "selected" : ""}>${x.l} [${x.u}]</option>`).join("")}</select><button class="btn primary" id="fsImg">Report image…</button>` : ""}</span></div>
+  <div class="chartwrap"><div class="chartbox" style="height:480px"><canvas id="fsC" aria-label="FRF overlay"></canvas></div><div class="readout" id="fsR"></div></div>
+  <div class="tblwrap"><table class="list" id="fsT2"><thead><tr><th></th><th>Name</th><th>Response</th><th>Reference</th><th>Driving point</th></tr></thead><tbody>
+  ${(fr.length ? fr : co).map((id, i) => { const n = N(id); return `<tr data-id="${id}" style="cursor:pointer"><td><span style="display:inline-block;width:14px;height:3px;background:var(--s${(i % 10) + 1})"></span></td><td>${esc(n.name)}</td><td>${esc(n.d.resp || "")}</td><td>${esc(n.d.refName || "")}</td><td>${n.d.dp ? "●" : ""}</td></tr>`; }).join("")}</tbody></table></div>`;
+}
+function bindFrfSummary(ids){
+  const fr = ids.filter(id => N(id).d.kind === "frf"); const use = fr.length ? fr : ids;
+  const t2 = $("#fsT2"); if (t2) t2.onclick = e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; UI.sel = new Set([tr.dataset.id]); UI.active = tr.dataset.id; renderTree(); renderView(); };
+  if ($("#fsT")) $("#fsT").onchange = e => { UI.frfT = e.target.value; renderView(); };
+  if ($("#fsImg")) $("#fsImg").onclick = () => frfImageDialog(use);
+  let geo = null; const draw = () => { const g = canvasInto("fsC"); if (!g) return; const K = screenColors(); const o = frfOpts(use, K); o.phase = false; geo = drawFrf(g.c, 0, 0, g.W, g.H, K, o); frfReadout(geo, "fsR"); };
+  draw(); FRFSUM = draw; bindFrfCanvas("fsC", () => geo, draw);
+}
+function frfImageDialog(ids){
+  const b = document.createElement("div"); b.style.display = "contents";
+  b.innerHTML = `<div class="opts"><label for="fiSize">Size <select id="fiSize">${["1600x1200", "1600x900", "1200x900", "1600x1600", "1200x1200", "2400x1800"].map(x => `<option>${x}</option>`).join("")}</select></label><label><input type="checkbox" id="fiCur" ${UI.frfCur ? "checked" : ""}> Cursor</label></div><img class="prev" id="fiPrev" alt="FRF chart preview">`;
+  let cv; const build = () => {
+    const [W, H] = b.querySelector("#fiSize").value.split("x").map(Number); const sc = Math.min(W, H*1.9)/760; cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"); const K = REPORT_COLORS; c.fillStyle = "#fff"; c.fillRect(0, 0, W, H);
+    const nodes = ids.map(N); const t = UI.frfT || "acc"; const one = nodes.length === 1; const d0 = nodes[0].d;
+    const pad = 24*sc; c.textBaseline = "top"; c.textAlign = "left"; c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillText(`${FRF_T[t].l.toUpperCase()} · IMPACT TEST`.split("").join(String.fromCharCode(8202)), pad, pad);
+    c.fillStyle = K.ink; c.font = `600 ${15*sc*FS}px ${K.sans}`; c.fillText(one ? nodes[0].name : (pathOf(nodes[0].parent).slice(-2).join(" / ") || "FRF"), pad, pad + 18*sc);
+    const ms = one && d0.dp ? frfMassStiff(d0) : null; if (ms && ms.k && ms.m){ c.textAlign = "right"; c.fillText(`k = ${fmtSci(ms.k/1e6)} kN/mm · m = ${fmtSci(ms.m)} kg`, W - pad, pad + 18*sc); c.textAlign = "left"; }
+    c.fillStyle = K.muted; c.font = `${12*sc*FS}px ${K.sans}`; c.fillText(one ? `Response ${d0.resp || ""} · Reference ${d0.refName || ""}${d0.dp ? " · driving point" : ""}` : `${nodes.length} FRF`, pad, pad + 44*sc);
+    const top = pad + 70*sc; c.strokeStyle = K.line; c.lineWidth = sc; c.beginPath(); c.moveTo(pad, top - 6*sc); c.lineTo(W - pad, top - 6*sc); c.stroke();
+    const o = frfOpts(ids, K); o.scale = sc; o.head = true; if (!b.querySelector("#fiCur").checked) o.cur = null; if (!one) o.phase = false;
+    let legH = one ? 0 : (nodes.length*18 + 10)*sc;
+    drawFrf(c, pad - 10*sc, top, W - 2*pad + 10*sc, H - top - pad - legH, K, o);
+    if (!one) nodes.forEach((n, i) => { const y = H - pad - legH + (8 + i*18)*sc; c.strokeStyle = o.curves[i].color; c.lineWidth = 2.4*sc; c.beginPath(); c.moveTo(pad, y + 7*sc); c.lineTo(pad + 22*sc, y + 7*sc); c.stroke(); c.fillStyle = K.ink; c.font = `${12*sc*FS}px ${K.sans}`; c.textBaseline = "middle"; c.fillText(n.name + (n.d.dp ? "  (driving point)" : ""), pad + 30*sc, y + 7*sc); });
+    b.querySelector("#fiPrev").src = cv.toDataURL("image/png");
+  };
+  b.addEventListener("change", build);
+  const name = ids.length === 1 ? N(ids[0]).name : "FRF";
+  modal("FRF chart for the report", b, [
+    { label: "Close" },
+    { label: "Copy image", run: () => { try { const pr = new Promise(res => cv.toBlob(res, "image/png")); navigator.clipboard.write([new ClipboardItem({ "image/png": pr })]).then(() => toast("Image copied — paste it into Word"), () => toast("This view doesn't allow copying images. Use Save PNG.")); } catch(e){ toast("This view doesn't allow copying images. Use Save PNG."); } return false; } },
+    { label: "Save PNG", primary: true, run: () => { cv.toBlob(bl => saveWithPicker(safeName(name) + "_" + (UI.frfT || "acc") + ".png", bl, "PNG image", "image/png", ".png"), "image/png"); return false; } },
+  ], true);
+  (document.fonts?.ready || Promise.resolve()).then(build); build();
+}
+
 /* ---------- toast ---------- */
 let toastT;
 function toast(msg, act, fn){
@@ -3567,7 +3871,7 @@ $("#fUnv").onchange = e => { const fs = [...e.target.files]; if (fs.length) reli
     sp.addEventListener("pointermove", mv); sp.addEventListener("pointerup", up); });
 })();
 
-new ResizeObserver(() => { drawChart(); drawTime(); drawAe(); if (AESUM) AESUM(); drawRt(); if (RTSUM) RTSUM(); if (LIMDRAW) LIMDRAW(); }).observe(document.body);
+new ResizeObserver(() => { drawChart(); drawTime(); drawAe(); if (AESUM) AESUM(); drawRt(); if (RTSUM) RTSUM(); if (LIMDRAW) LIMDRAW(); if (FRFV) drawFrfView(); if (FRFSUM) FRFSUM(); }).observe(document.body);
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => renderView());
 new MutationObserver(() => renderView()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 document.fonts?.ready?.then(() => drawChart());

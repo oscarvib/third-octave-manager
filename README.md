@@ -10,6 +10,7 @@ Herramienta en un único archivo HTML para gestionar y visualizar medidas de rui
   - Señales temporales UNV (dataset 58/58b): PSD de Welch (Hann, 50 %, Δf 1 Hz) integrada por banda; nombre de canal leído del registro 9.
   - Tiempo de reverberación desde señales UNV (ISO 3382-2): respuesta impulsiva o caída de ruido interrumpido, filtros de banda de fase cero, T20/T30/EDT por banda con indicadores de calidad y media de posiciones.
   - Espectros UNV (dataset 58 con abscisa en frecuencia: espectro, autoespectro, PSD; los complejos se toman en módulo): se guardan como banda estrecha y se calculan los tercios u octavas. Referencia 20 µPa (aire) o 1 µPa (agua, detectado en los hidrófonos).
+  - Ensayos de impacto UNV (FRF, coherencia, PSD, 1/3 octava y señales temporales): carpeta propia con subcarpetas; las FRF y coherencias no se mezclan con los espectros de nivel; en el driving point se calculan las líneas de rigidez y masa.
   - Excel de espectros FFT de vibraciones (se descartan las líneas por debajo de 1 Hz).
   - Excel de aislamiento a ruido aéreo: R', R'w (C; Ctr) según ISO 717-1, DnT,w, corrección por ruido de fondo (ISO 16283-1) y curvas de decaimiento con T20/T30, recta de regresión e indicadores ξ y C.
 - **Visualización**
@@ -48,6 +49,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.12 | 21/11/2026 | Importación de ensayos de impacto UNV (FRF, coherencia, PSD, 1/3 octava, temporales) en subcarpetas propias; vista FRF (acelerancia, movilidad, receptancia, rigidez dinámica, masa aparente, impedancia) con fase y coherencia; líneas de masa y rigidez del driving point. |
 | 2.11 | 19/11/2026 | Fondo en gris claro (discontinuo y con área sombreada) para no confundirlo con la media negra; con «solo la media» y fondo, la media pasa a azul intenso. |
 | 2.10 | 18/11/2026 | Corregido: al guardar las imágenes de toda una carpeta no salían las curvas límite. |
 | 2.9 | 18/11/2026 | Leyenda del informe: valores en el cursor o valor global (suma energética), independiente de dibujar la línea del cursor; con una sola medida salen la medida, el fondo y los límites (estos sin valor total). |
