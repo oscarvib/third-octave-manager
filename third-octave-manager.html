@@ -245,7 +245,7 @@ table.bands tr.rp td,table.bands tr.rp th{font-weight:600}
 
 </head><body><div class="app">
   <header class="top">
-    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.12 · 21 Nov 2026">v2.12</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
+    <div class="brand"><h1>Third-Octave Manager <span class="ver" id="appVer" title="Version 2.13 · 21 Nov 2026">v2.13</span></h1><small>Sound level meter Excel · UNV signals &amp; spectra · 1/3 &amp; 1/1 octave</small></div>
     <div class="tools">
       <button class="btn primary" id="bImport" title="Import an Excel file from the sound level meter, or UNV time signals (.unv)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0-3-3m3 3 3-3M2.5 11v2.5h11V11"/></svg>Import Excel / UNV</button>
       <span class="proj" id="projName" title="Current project file"></span>
@@ -595,7 +595,7 @@ function fLabHz(f){ return f >= 1000 ? fLab(f) + "Hz" : fLab(f) + " Hz"; }
 function fExportLab(f){ return f >= 1000 ? (Math.round(f/10)/100) + "kHz" : (Math.round(f*10)/10) + "Hz"; }
 let _id = Date.now() % 100000;
 const uid = () => "n" + (++_id).toString(36) + Math.random().toString(36).slice(2, 5);
-const APP_VERSION = "2.12";   // shown in the header (#appVer) and stored in saved projects
+const APP_VERSION = "2.13";   // shown in the header (#appVer) and stored in saved projects
 const TOTKEYS = ["A", "C", "Z"];
 const isTot = c => typeof c === "string";
 const FS = 1.22;   // text size factor for every chart (screen and report)
@@ -987,7 +987,7 @@ function menuFor(id, x, y){
       ...(nm > 1 ? [{ label: `Compare ${nm} measurements`, run: () => { UI.active = id; renderView(); UI.grp = "meas"; renderView(); } }] : []),
       ...(ids.filter(i => N(i).t === "f").length > 1 ? [{ label: "Compare folder means", run: () => { UI.active = id; renderView(); UI.grp = "folders"; renderView(); } }] : []),
       { label: "Report image…", run: () => { UI.active = id; renderView(); reportDialog(); } },
-      ...(UI.repClip && ids.some(i => N(i).t === "f") ? [{ label: `Paste print settings to ${ids.filter(i => N(i).t === "f").length} folders (from “${UI.repClip.from}”)`, run: () => { const c = pasteRep(ids.filter(i => N(i).t === "f"), UI.repClip.rep); toast(`Print settings applied to ${c} folders`); } }] : []),
+      ...(UI.repClip && ids.some(i => N(i).t === "f") ? [{ label: `Paste print settings to ${ids.filter(i => N(i).t === "f").length} folders (from “${UI.repClip.from}”)`, run: () => { const c = pasteRep(ids.filter(i => N(i).t === "f"), UI.repClip.rep, UI.repClip.frep); toast(`Print settings applied to ${c} folders`); } }] : []),
       { label: "Group into new folder", run: () => groupInFolder(ids) },
       { label: "Move to…", run: () => moveDialog(ids) },
       { label: "Cut", k: "Ctrl+X", run: () => cut(ids) },
@@ -1013,9 +1013,9 @@ function menuFor(id, x, y){
       { label: "Sort by name", run: () => sortFolder(id, "name") },
       { label: "Sort by time", run: () => sortFolder(id, "time") },
       { label: "Report image…", run: () => { renderView(); reportDialog(); } },
-      ...(n.rep ? [{ label: "Copy print settings", run: () => { UI.repClip = { from: n.name, rep: repPortable(n.rep) }; toast(`Print settings of “${n.name}” copied`); } }] : []),
-      ...(UI.repClip ? [{ label: `Paste print settings (from “${UI.repClip.from}”)`, run: () => { pasteRep([id], UI.repClip.rep); toast(`Print settings applied to “${n.name}”`); } },
-        ...(n.kids.some(k => N(k).t === "f") ? [{ label: "Paste print settings here and in subfolders", run: () => { const c = pasteRep(foldersDeep(id), UI.repClip.rep); toast(`Print settings applied to ${c} folders`); } }] : [])] : []),
+      ...(n.rep || n.frep ? [{ label: "Copy print settings", run: () => { UI.repClip = { from: n.name, rep: repPortable(n.rep), frep: n.frep ? frepPortable(n.frep) : null }; toast(`Print settings of “${n.name}” copied`); } }] : []),
+      ...(UI.repClip ? [{ label: `Paste print settings (from “${UI.repClip.from}”)`, run: () => { pasteRep([id], UI.repClip.rep, UI.repClip.frep); toast(`Print settings applied to “${n.name}”`); } },
+        ...(n.kids.some(k => N(k).t === "f") ? [{ label: "Paste print settings here and in subfolders", run: () => { const c = pasteRep(foldersDeep(id), UI.repClip.rep, UI.repClip.frep); toast(`Print settings applied to ${c} folders`); } }] : [])] : []),
       { label: "Export to Excel", run: () => exportXlsx([id]) },
       "-",
       { label: "Delete folder", k: "Del", danger: true, run: () => deleteNodes([id]) },
@@ -1904,9 +1904,11 @@ function reportCfg(over = {}){
 }
 /* print settings travel between folders: everything except the folder's own details line */
 const repPortable = r => { if (!r) return null; const o = JSON.parse(JSON.stringify(r)); delete o.sub; delete o.subEdited; delete o.all; delete o.sameY; return o; };
-function pasteRep(targets, src){
-  const r = repPortable(src); if (!r) return 0; let n = 0;
-  commit(() => { for (const id of targets){ const f = N(id); if (!f || f.t !== "f") continue; const own = f.rep || {}; f.rep = { ...r, ...(own.subEdited ? { sub: own.sub, subEdited: true } : {}) }; n++; } });
+function pasteRep(targets, src, fsrc){
+  const r = repPortable(src), fr = fsrc ? frepPortable(fsrc) : null; if (!r && !fr) return 0; let n = 0;
+  commit(() => { for (const id of targets){ const f = N(id); if (!f || f.t !== "f") continue;
+    if (r){ const own = f.rep || {}; f.rep = { ...r, ...(own.subEdited ? { sub: own.sub, subEdited: true } : {}) }; }
+    if (fr){ const own = f.frep || {}; f.frep = { ...fr, ...(own.subEdited ? { sub: own.sub, subEdited: true } : {}) }; } n++; } });
   return n;
 }
 const foldersDeep = id => { const out = []; (function w(x){ const n = N(x); if (n && n.t === "f"){ if (x !== "root") out.push(x); n.kids.forEach(w); } })(id); return out; };
@@ -3590,13 +3592,13 @@ const supNum = e => String(e).replace(/-/g, "⁻").replace(/\d/g, x => "⁰¹²�
 const fmtSci = (v, p = 3) => { if (!isFinite(v)) return "—"; if (v === 0) return "0"; const e = Math.floor(Math.log10(Math.abs(v))); if (e >= -2 && e <= 4) return String(+v.toPrecision(p)); return `${+(v/Math.pow(10, e)).toPrecision(p)}·10${supNum(e)}`; };
 /* plot: magnitude (log), phase and coherence panels on a log frequency axis */
 function drawFrf(c, X, Y, W, H, K, o){
-  const sc = o.scale || 1, fs = n => `${n*sc*FS}px`;
+  const sc = o.scale || 1, fs = n => `${n*sc*FS}px`, fn = o.fn || 1, ft = o.ft || 1, lwk = o.lwk || 1;
   const curves = o.curves.filter(cv => cv.f && cv.f.length); if (!curves.length){ c.fillStyle = K.muted; c.font = `${fs(12)} ${K.sans}`; c.textAlign = "center"; c.fillText("No data", X + W/2, Y + H/2); return null; }
   const fMinAll = Math.max(...curves.map(cv => cv.f[1] || cv.f[0] || 1)), fMaxAll = Math.max(...curves.map(cv => cv.f[cv.f.length - 1]));
   const fa = o.z ? Math.max(fMinAll, o.z[0]) : (o.fmin || fMinAll), fb = o.z ? Math.min(fMaxAll, o.z[1]) : fMaxAll;
-  const L = X + 70*sc, R = 14*sc, Tp = Y + (o.head ? 8 : 10)*sc, B = 40*sc; const pw = X + W - R - L;
+  const L = X + (50*fn + 20*ft)*sc, R = 14*sc, Tp = Y + (o.head ? 8 : 10)*sc, B = (14*fn + 14*ft + 12)*sc; const pw = X + W - R - L;
   const showPh = o.phase !== false && curves.some(cv => cv.ph), showCoh = curves.some(cv => cv.coh);
-  const gap = 12*sc, hAll = Y + H - B - Tp; const hPh = showPh ? hAll*0.2 : 0, hCo = showCoh ? hAll*0.18 : 0; const hM = hAll - hPh - hCo - (showPh ? gap : 0) - (showCoh ? gap : 0);
+  const gap = Math.max(12, 15*fn)*sc, hAll = Y + H - B - Tp; const hPh = showPh ? hAll*0.2 : 0, hCo = showCoh ? hAll*0.18 : 0; const hM = hAll - hPh - hCo - (showPh ? gap : 0) - (showCoh ? gap : 0);
   const lA = Math.log(fa), lB = Math.log(fb); const xF = f => L + (Math.log(f) - lA)/(lB - lA)*pw; const fX = x => Math.exp(lA + (x - L)/pw*(lB - lA));
   // magnitude range: decades around what is visible
   let vmin = Infinity, vmax = -Infinity; const vals = [];
@@ -3609,7 +3611,7 @@ function drawFrf(c, X, Y, W, H, K, o){
   const yM = v => Tp + hM*(1 - (tY(v) - lo)/(hi - lo));
   const Tph = Tp + hM + gap, yP = p => Tph + hPh*(1 - (p + 180)/360);
   const Tco = Tp + hM + (showPh ? gap + hPh : 0) + gap, yC = v => Tco + hCo*(1 - v);
-  c.save(); c.lineWidth = sc; c.font = `${fs(10.5)} ${K.mono}`;
+  c.save(); c.lineWidth = sc; c.font = `${fs(10.5*fn)} ${K.mono}`;
   // grid and axes
   const panel = (t, h) => { c.strokeStyle = K.muted; c.beginPath(); c.moveTo(L + .5, t); c.lineTo(L + .5, t + h); c.lineTo(L + pw, t + h); c.stroke(); };
   const ticks = []; for (let e = Math.floor(Math.log10(fa)); e <= Math.ceil(Math.log10(fb)); e++) for (const m of [1, 2, 5]){ const f = m*Math.pow(10, e); if (f >= fa*0.999 && f <= fb*1.001) ticks.push(f); }
@@ -3623,8 +3625,8 @@ function drawFrf(c, X, Y, W, H, K, o){
   panel(Tp, hM); if (showPh) panel(Tph, hPh); if (showCoh) panel(Tco, hCo);
   c.textAlign = "center"; c.textBaseline = "top"; const yb = Y + H - B;
   ticks.forEach(f => { c.fillStyle = String(f).startsWith("1") ? K.ink : K.muted; c.fillText(fmtTickF(f), xF(f), yb + 6*sc); });
-  c.fillStyle = K.muted; c.font = `${fs(11)} ${K.sans}`; c.fillText(`Frequency [Hz]${o.z ? ` · zoom ${fmtTickF(fa)}–${fmtTickF(fb)} Hz · double-click: all` : ""}`, L + pw/2, yb + 22*sc);
-  const vlab = (t, h, txt) => { c.save(); c.translate(X + 13*sc, t + h/2); c.rotate(-Math.PI/2); c.textAlign = "center"; c.textBaseline = "middle"; c.fillStyle = K.muted; c.font = `${fs(11)} ${K.sans}`; c.fillText(txt, 0, 0); c.restore(); };
+  c.fillStyle = K.muted; c.font = `${fs(11*ft)} ${K.sans}`; c.fillText(`Frequency [Hz]${o.z && !o.print ? ` · zoom ${fmtTickF(fa)}–${fmtTickF(fb)} Hz · double-click: all` : ""}`, L + pw/2, yb + (10 + 13*fn)*sc);
+  const vlab = (t, h, txt) => { c.save(); c.translate(X + 9*sc*ft, t + h/2); c.rotate(-Math.PI/2); c.textAlign = "center"; c.textBaseline = "middle"; c.fillStyle = K.muted; c.font = `${fs(11*ft)} ${K.sans}`; c.fillText(txt, 0, 0); c.restore(); };
   vlab(Tp, hM, o.yLab || "|FRF|"); if (showPh) vlab(Tph, hPh, "Phase"); if (showCoh) vlab(Tco, hCo, "Coh.");
   // fit ranges (driving point)
   for (const r of o.ranges || []){ c.fillStyle = r.color; c.globalAlpha = .08; c.fillRect(xF(Math.max(fa, r.a)), Tp, Math.max(0, xF(Math.min(fb, r.b)) - xF(Math.max(fa, r.a))), hM); c.globalAlpha = 1; }
@@ -3637,13 +3639,13 @@ function drawFrf(c, X, Y, W, H, K, o){
       if (x !== px){ flush(); px = x; mn = mx = yv; } else { if (yv < mn) mn = yv; if (yv > mx) mx = yv; } }
     flush(); c.stroke(); c.restore();
   };
-  for (const cv of curves){ strip(cv, cv.mag, v => v > 0 ? yM(v) : NaN, Tp, hM, (cv.lw || 1.4)*sc, 1);
-    if (showPh && cv.ph) strip(cv, cv.ph, yP, Tph, hPh, 1*sc, .85);
-    if (showCoh && cv.coh) strip(cv, cv.coh, yC, Tco, hCo, 1*sc, .85); }
+  for (const cv of curves){ strip(cv, cv.mag, v => v > 0 ? yM(v) : NaN, Tp, hM, (cv.lw || 1.4)*sc*lwk, 1);
+    if (showPh && cv.ph) strip(cv, cv.ph, yP, Tph, hPh, 1*sc*lwk, .85);
+    if (showCoh && cv.coh) strip(cv, cv.coh, yC, Tco, hCo, 1*sc*lwk, .85); }
   // mass / stiffness lines
   c.save(); c.beginPath(); c.rect(L, Tp, pw, hM); c.clip();
-  for (const ln of o.lines || []){ c.strokeStyle = ln.color; c.lineWidth = 2*sc; c.setLineDash([7*sc, 4*sc]); c.beginPath(); for (let k = 0; k <= 60; k++){ const f = fa*Math.pow(fb/fa, k/60); const v = ln.fn(f); const yy = yM(v); k ? c.lineTo(xF(f), yy) : c.moveTo(xF(f), yy); } c.stroke(); c.setLineDash([]);
-    c.font = `600 ${fs(11)} ${K.sans}`; const tw = c.measureText(ln.name).width; let fl = Math.min(Math.max(ln.at || Math.sqrt(fa*fb), fa), fb); let xl = xF(fl) + 4*sc; if (xl + tw > L + pw - 4*sc){ xl = L + pw - 4*sc - tw; fl = fX(xl); }
+  for (const ln of o.lines || []){ c.strokeStyle = ln.color; c.lineWidth = 2*sc*lwk; c.setLineDash([7*sc, 4*sc]); c.beginPath(); for (let k = 0; k <= 60; k++){ const f = fa*Math.pow(fb/fa, k/60); const v = ln.fn(f); const yy = yM(v); k ? c.lineTo(xF(f), yy) : c.moveTo(xF(f), yy); } c.stroke(); c.setLineDash([]);
+    if (o.noLineLab) continue; c.font = `600 ${fs(11*fn)} ${K.sans}`; const tw = c.measureText(ln.name).width; let fl = Math.min(Math.max(ln.at || Math.sqrt(fa*fb), fa), fb); let xl = xF(fl) + 4*sc; if (xl + tw > L + pw - 4*sc){ xl = L + pw - 4*sc - tw; fl = fX(xl); }
     const v = ln.fn(fl); let yl = yM(v) - 4*sc; yl = Math.max(Tp + 14*sc, Math.min(Tp + hM - 4*sc, yl)); c.fillStyle = K.panel; c.globalAlpha = .8; c.fillRect(xl - 2*sc, yl - 13*sc, tw + 4*sc, 14*sc); c.globalAlpha = 1; c.fillStyle = ln.color; c.textAlign = "left"; c.textBaseline = "bottom"; c.fillText(ln.name, xl, yl); }
   c.restore();
   // cursor
@@ -3654,33 +3656,163 @@ function drawFrf(c, X, Y, W, H, K, o){
   return { L, pw, fa, fb, fMinAll, fMaxAll, fX, cur, Tp, H: Y + H - B };
 }
 let FRFV = null, FRFSUM = null;
-function frfCurve(n, t, color){
-  const d = n.d;
-  if (d.kind === "coh"){ const v = getF32(d.cohRef); const f = Float64Array.from({ length: v.length }, (_, i) => d.f0 + i*d.df); return { name: n.name, f, mag: new Float64Array(v.length).fill(NaN), coh: v, color }; }
-  const fd = frfDataNc(d, t); const cn = d.cohId && N(d.cohId) ? getF32(N(d.cohId).d.cohRef) : null;
+function frfCurve(n, t, color, withCoh = true){
+  const d = n.d; const fd = frfDataNc(d, t); const cn = withCoh && d.cohId && N(d.cohId) ? getF32(N(d.cohId).d.cohRef) : null;
   return { name: n.name, f: fd.f, mag: fd.mag, ph: fd.ph, coh: cn, color, lw: 1.5 };
 }
 function msLines(d, t){
   const ms = frfMassStiff(d); if (!ms) return { lines: [], ranges: [], ms };
   const lines = []; const conv = (ar, f) => { const w = 2*Math.PI*f; const [x, y] = frfTo(t, ar, 0, w); return Math.hypot(x, y); };
-  if (ms.k) lines.push({ name: `stiffness k = ${fmtSci(ms.k)} N/m (${fmtSci(ms.k/1e6)} kN/mm)`, color: "#d9730d", fn: f => conv(-Math.pow(2*Math.PI*f, 2)/ms.k, f), at: ms.ka });
-  if (ms.m) lines.push({ name: `mass m = ${fmtSci(ms.m)} kg`, color: "#7a3fb0", fn: f => conv(1/ms.m, f), at: ms.ma });
+  if (ms.k) lines.push({ name: `stiffness k = ${fmtSci(ms.k)} N/m (${fmtSci(ms.k/1e6)} kN/mm)`, short: "Stiffness k", val: `${fmtSci(ms.k/1e6)} kN/mm`, color: "#d9730d", fn: f => conv(-Math.pow(2*Math.PI*f, 2)/ms.k, f), at: ms.ka });
+  if (ms.m) lines.push({ name: `mass m = ${fmtSci(ms.m)} kg`, short: "Mass m", val: `${fmtSci(ms.m)} kg`, color: "#7a3fb0", fn: f => conv(1/ms.m, f), at: ms.ma });
   return { lines, ranges: [{ a: ms.ka, b: ms.kb, color: "#d9730d" }, { a: ms.ma, b: ms.mb, color: "#7a3fb0" }], ms };
 }
+
+/* ---------- coherence: 1/3-octave medians, valid range, chart ---------- */
+const COH_BANDS = (() => { const a = []; for (let k = -30; k <= 13; k++){ const fc = 1000*Math.pow(2, k/3); a.push({ fc, nom: nominal(k), lo: fc/Math.pow(2, 1/6), hi: fc*Math.pow(2, 1/6) }); } return a; })();
+const cohThr = () => UI.cohThr || 0.9;
+function cohBands(d){
+  const key = d.cohRef; cohBands.c = cohBands.c || new Map(); if (cohBands.c.has(key)) return cohBands.c.get(key);
+  const v = getF32(d.cohRef); if (!v) return [];
+  const out = COH_BANDS.map(b => { const a = Math.max(0, Math.ceil((b.lo - d.f0)/d.df)), e = Math.min(v.length - 1, Math.floor((b.hi - d.f0)/d.df)); const w = [];
+    for (let i = a; i <= e; i++){ if (d.f0 + i*d.df > 0 && isFinite(v[i])) w.push(v[i]); }
+    if (!w.length) return null; w.sort((x, y) => x - y); return { ...b, med: w[Math.floor(w.length/2)], min: w[0], mean: w.reduce((s, x) => s + x, 0)/w.length, n: w.length }; });
+  cohBands.c.set(key, out); return out;
+}
+/* good range: first to last 1/3-octave band whose median reaches the threshold; bands below it inside are the dips */
+function cohValid(d, thr){
+  const bs = cohBands(d).filter(Boolean); const good = bs.filter(b => b.med >= thr);
+  if (!good.length) return { fa: null, fb: null, mean: null, pct: 0, dips: [], bands: bs };
+  const a = good[0], z = good[good.length - 1]; const ins = bs.filter(b => b.fc >= a.fc && b.fc <= z.fc);
+  const v = getF32(d.cohRef); let s = 0, n = 0; for (let i = 0; i < v.length; i++){ const f = d.f0 + i*d.df; if (f >= a.lo && f <= z.hi && isFinite(v[i])){ s += v[i]; n++; } }
+  return { fa: a.lo, fb: z.hi, la: a.nom, lb: z.nom, mean: n ? s/n : null, pct: Math.round(100*good.length/ins.length), dips: ins.filter(b => b.med < thr), bands: bs };
+}
+const cohRangeTxt = cv => cv && cv.la != null ? `${fLabHz(cv.la)} – ${fLabHz(cv.lb)}` : "none";
+const cohRangeShort = cv => cv && cv.la != null ? `${fLab(cv.la)}–${fLab(cv.lb)} Hz` : "none";
+const cohRefName = n => n.d.refName || (Object.values(S.nodes).find(x => x.t === "m" && x.d.kind === "frf" && x.d.cohId === n.id) || { d: {} }).d.refName || "";
+function cohCell(v, thr){ if (v == null) return ""; return v >= thr ? "rgba(42,157,58,.20)" : v >= 0.5 ? "rgba(240,138,18,.24)" : "rgba(214,39,40,.22)"; }
+function cohCurve(n, color){ const d = n.d; const v = getF32(d.cohRef); const f = Float64Array.from({ length: v ? v.length : 0 }, (_, i) => d.f0 + i*d.df); return { name: n.name, f, coh: v, color, d }; }
+function stripLine(c, f, arr, xF, yf, fa, fb, clip, color, lw, alpha){
+  c.save(); c.beginPath(); c.rect(clip[0], clip[1] - 1, clip[2], clip[3] + 2); c.clip(); c.strokeStyle = color; c.lineWidth = lw; c.globalAlpha = alpha; c.lineJoin = "round"; c.beginPath();
+  let px = null, mn = 0, mx = 0, first = true;
+  const flush = () => { if (px == null) return; if (first){ c.moveTo(px, mn); first = false; } else c.lineTo(px, mn); if (mx !== mn) c.lineTo(px, mx); };
+  for (let i = 0; i < f.length; i++){ const fi = f[i]; if (fi < fa || fi > fb) continue; const v = arr[i]; if (!isFinite(v)) continue; const yv = yf(v); if (!isFinite(yv)) continue; const x = Math.round(xF(fi));
+    if (x !== px){ flush(); px = x; mn = mx = yv; } else { if (yv < mn) mn = yv; if (yv > mx) mx = yv; } }
+  flush(); c.stroke(); c.restore();
+}
+function drawCoh(c, X, Y, W, H, K, o){
+  const sc = o.scale || 1, fn = o.fn || 1, ft = o.ft || 1, lwk = o.lwk || 1, fs = n => `${n*sc*FS}px`; const thr = o.thr || 0.9, sm = o.smooth || "both";
+  const curves = o.curves.filter(cv => cv.f && cv.f.length); if (!curves.length){ c.fillStyle = K.muted; c.font = `${fs(12)} ${K.sans}`; c.textAlign = "center"; c.fillText("No data", X + W/2, Y + H/2); return null; }
+  const fMinAll = Math.max(...curves.map(cv => cv.f[1] || cv.f[0] || 1)), fMaxAll = Math.max(...curves.map(cv => cv.f[cv.f.length - 1]));
+  const fa = o.z ? Math.max(fMinAll, o.z[0]) : fMinAll, fb = o.z ? Math.min(fMaxAll, o.z[1]) : fMaxAll;
+  const stack = o.layout === "stack" && curves.length > 1;
+  const L = X + (34*fn + 20*ft)*sc, R = 14*sc, Tp = Y + 10*sc, B = (14*fn + 14*ft + 12)*sc, pw = X + W - R - L;
+  const np = stack ? curves.length : 1, gap = stack ? 10*sc : 0, hp = (Y + H - B - Tp - gap*(np - 1))/np;
+  const y0 = o.ymin || 0;
+  const lA = Math.log(fa), lB = Math.log(fb); const xF = f => L + (Math.log(f) - lA)/(lB - lA)*pw; const fX = x => Math.exp(lA + (x - L)/pw*(lB - lA));
+  const ticks = []; for (let e = Math.floor(Math.log10(fa)); e <= Math.ceil(Math.log10(fb)); e++) for (const m of [1, 2, 5]){ const f = m*Math.pow(10, e); if (f >= fa*0.999 && f <= fb*1.001) ticks.push(f); }
+  c.save(); c.lineWidth = sc;
+  const panels = [];
+  for (let p = 0; p < np; p++){
+    const t = Tp + p*(hp + gap); const yC = v => t + hp*(1 - (Math.max(y0, v) - y0)/(1 - y0)); panels.push({ t, yC });
+    ticks.forEach(f => { const x = Math.round(xF(f)) + .5; c.strokeStyle = K.line; c.setLineDash(String(f).startsWith("1") ? [] : [2*sc, 3*sc]); c.beginPath(); c.moveTo(x, t); c.lineTo(x, t + hp); c.stroke(); c.setLineDash([]); });
+    const last = p === np - 1; const yt = (y0 === 0 ? (hp > 150*sc ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1]) : [0.5, 0.75, 1]).filter(v => (last || v > 0) && Math.abs(v - thr) > (hp < 200*sc ? 0.12 : 0.07));
+    c.font = `${fs(10.5*fn)} ${K.mono}`; c.textAlign = "right"; c.textBaseline = "middle"; c.fillStyle = K.muted;
+    yt.forEach(v => { const yy = Math.round(yC(v)) + .5; c.strokeStyle = K.line; c.beginPath(); c.moveTo(L, yy); c.lineTo(L + pw, yy); c.stroke(); c.fillText(String(v), L - 6*sc, yy); });
+    if (!last && y0 === 0){ const yy = Math.round(yC(0)) + .5; c.strokeStyle = K.line; c.beginPath(); c.moveTo(L, yy); c.lineTo(L + pw, yy); c.stroke(); }
+    // threshold: dashed, its value in red on the axis
+    const yT = yC(thr); c.strokeStyle = "#c2412d"; c.lineWidth = 1.2*sc; c.setLineDash([6*sc, 4*sc]); c.beginPath(); c.moveTo(L, Math.round(yT) + .5); c.lineTo(L + pw, Math.round(yT) + .5); c.stroke(); c.setLineDash([]); c.lineWidth = sc;
+    c.fillStyle = "#c2412d"; c.font = `600 ${fs(10.5*fn)} ${K.mono}`; c.fillText(String(thr), L - 6*sc, yT);
+    c.strokeStyle = K.muted; c.beginPath(); c.moveTo(L + .5, t); c.lineTo(L + .5, t + hp); c.lineTo(L + pw, t + hp); c.stroke();
+  }
+  // curves
+  curves.forEach((cv, i) => { const P = panels[stack ? i : 0]; const clip = [L, P.t, pw, hp];
+    if (sm !== "bands") stripLine(c, cv.f, cv.coh, xF, P.yC, fa, fb, clip, cv.color, 1*sc*lwk, sm === "both" ? (curves.length > 1 && !stack ? .18 : .45) : (curves.length > 1 && !stack ? .6 : .9));
+    if (sm !== "raw"){ const bs = cohBands(cv.d); c.save(); c.beginPath(); c.rect(L, P.t - 2*sc, pw, hp + 4*sc); c.clip(); c.strokeStyle = cv.color; c.lineWidth = 2.4*sc*lwk; c.lineJoin = "round"; c.beginPath(); let first = true;
+      for (const b of bs){ if (!b || b.hi < fa || b.lo > fb) continue; const x1 = xF(Math.max(fa, b.lo)), x2 = xF(Math.min(fb, b.hi)), y = P.yC(b.med); if (first){ c.moveTo(x1, y); first = false; } else c.lineTo(x1, y); c.lineTo(x2, y); }
+      c.stroke(); c.restore(); }
+    if (stack){ c.font = `600 ${fs(11*fn)} ${K.sans}`; c.textAlign = "left"; c.textBaseline = "top"; const tw = c.measureText(cv.name).width; c.fillStyle = K.panel; c.globalAlpha = .85; c.fillRect(L + 6*sc, P.t + 4*sc, tw + 22*sc, 17*sc*fn); c.globalAlpha = 1;
+      c.fillStyle = cv.color; c.fillRect(L + 10*sc, P.t + (4 + 7*fn)*sc, 10*sc, 3*sc); c.fillStyle = K.ink; c.fillText(cv.name, L + 24*sc, P.t + 6*sc); }
+  });
+  // axes text
+  const yb = Y + H - B; c.textAlign = "center"; c.textBaseline = "top"; c.font = `${fs(10.5*fn)} ${K.mono}`;
+  ticks.forEach(f => { c.fillStyle = String(f).startsWith("1") ? K.ink : K.muted; c.fillText(fmtTickF(f), xF(f), yb + 6*sc); });
+  c.fillStyle = K.muted; c.font = `${fs(11*ft)} ${K.sans}`; c.fillText(`Frequency [Hz]${o.z && !o.print ? ` · zoom ${fmtTickF(fa)}–${fmtTickF(fb)} Hz · double-click: all` : ""}`, L + pw/2, yb + (10 + 13*fn)*sc);
+  c.save(); c.translate(X + 9*sc*ft, Tp + (yb - Tp)/2); c.rotate(-Math.PI/2); c.textAlign = "center"; c.textBaseline = "middle"; c.font = `${fs(11*ft)} ${K.sans}`; c.fillText("Coherence γ²", 0, 0); c.restore();
+  // cursor
+  let cur = null;
+  if (o.cur && o.cur >= fa && o.cur <= fb){ const x = Math.round(xF(o.cur)) + .5; c.strokeStyle = K.cur; c.lineWidth = 1.2*sc; c.setLineDash([4*sc, 3*sc]); c.beginPath(); c.moveTo(x, Tp); c.lineTo(x, yb); c.stroke(); c.setLineDash([]);
+    cur = curves.map((cv, k) => { let i = Math.round((o.cur - cv.f[0])/((cv.f[1] - cv.f[0]) || 1)); i = Math.max(0, Math.min(cv.f.length - 1, i)); const v = cv.coh[i]; const P = panels[stack ? k : 0];
+      if (isFinite(v)) drawMarker(c, "circle", x, P.yC(v), 4*sc, K.panel, cv.color, 1.8*sc);
+      const b = cohBands(cv.d).find(b => b && o.cur >= b.lo && o.cur < b.hi); return { name: cv.name, f: cv.f[i], coh: v, band: b ? b.med : null, bnom: b ? b.nom : null, color: cv.color }; }); }
+  c.restore();
+  return { L, pw, fa, fb, fMinAll, fMaxAll, fX, cur };
+}
+function cohReadout(geo, id){ const el = $("#" + id); if (!el) return;
+  if (!geo || !geo.cur){ el.innerHTML = `<h3>Cursor</h3><div class="hint">Click on the chart to read the coherence at a frequency, line by line and as the median of its 1/3-octave band. Mouse wheel zooms the frequency axis.</div>`; return; }
+  const bn = geo.cur.find(r => r.bnom != null);
+  el.innerHTML = `<h3>Cursor</h3><div class="f">${geo.cur[0] ? (+geo.cur[0].f.toFixed(2)) + " Hz" : ""}</div><table><tr><td class="nm" style="color:var(--muted)">γ² line</td><td class="vl" style="color:var(--muted)">${bn ? fLab(bn.bnom) + " band" : ""}</td></tr>${geo.cur.map(r => `<tr><td class="nm" title="${esc(r.name)}"><span style="display:inline-block;width:10px;height:3px;background:${r.color};vertical-align:middle;margin-right:5px"></span>${esc(r.name.replace(/ · coherence$/, ""))}</td><td class="vl"><span style="color:${r.coh < cohThr() ? "#c2412d" : "inherit"}">${isFinite(r.coh) ? (+r.coh).toFixed(3) : "—"}</span> · ${r.band != null ? r.band.toFixed(2) : "—"}</td></tr>`).join("")}</table><div class="hint">Line value · median of the 1/3-octave band. Red: below γ² = ${cohThr()}. Wheel: zoom · double-click: all.</div>`;
+}
+function cohCtrlsHtml(multi, imgId){
+  const sm = UI.cohSm || "both", lay = UI.cohLay || "overlay";
+  return `<div class="ctrls">
+    <label for="cohThr">Threshold γ² <select id="cohThr">${[0.7, 0.8, 0.9, 0.95].map(v => `<option ${v === cohThr() ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+    <label for="cohSm">Show <select id="cohSm"><option value="both" ${sm === "both" ? "selected" : ""}>Lines + 1/3-octave median</option><option value="raw" ${sm === "raw" ? "selected" : ""}>Lines only</option><option value="bands" ${sm === "bands" ? "selected" : ""}>1/3-octave median only</option></select></label>
+    ${multi ? `<label>Layout <span class="seg" id="cohLay"><button data-l="overlay" aria-pressed="${lay === "overlay"}">Overlay</button><button data-l="stack" aria-pressed="${lay === "stack"}">One panel each</button></span></label>` : ""}
+    <span class="sp"><button class="btn primary" id="${imgId}">Report image…</button></span></div>`;
+}
+function bindCohCtrls(redraw){
+  if ($("#cohThr")) $("#cohThr").onchange = e => { UI.cohThr = +e.target.value; renderView(); };
+  if ($("#cohSm")) $("#cohSm").onchange = e => { UI.cohSm = e.target.value; redraw(); };
+  if ($("#cohLay")) $("#cohLay").onclick = e => { const b = e.target.closest("button[data-l]"); if (!b) return; UI.cohLay = b.dataset.l; renderView(); };
+}
+function cohTablesHtml(ids){
+  const thr = cohThr(); const st = ids.map(id => ({ id, n: N(id), v: cohValid(N(id).d, thr) }));
+  const used = COH_BANDS.filter((b, j) => st.some(x => x.v.bands.length && cohBands(x.n.d)[j]));
+  const q = `<div class="sec-h"><h4>Quality by channel</h4><span class="hint">Good range: from the first to the last 1/3-octave band whose median coherence reaches γ² = ${thr}. Dips: bands inside it that fall below (antiresonances, nodes or noise).</span></div>
+  <div class="tblwrap"><table class="list" id="cohQ"><thead><tr><th></th><th>Coherence</th><th>Response</th><th>Reference</th><th>Good range (γ² ≥ ${thr})</th><th class="nd">Mean γ² in range</th><th class="nd">Bands ≥ ${thr}</th><th>Dips below ${thr}</th></tr></thead><tbody>
+  ${st.map((x, i) => `<tr data-id="${x.id}" style="cursor:pointer"><td><span style="display:inline-block;width:14px;height:3px;background:var(--s${(i % 10) + 1})"></span></td><td>${esc(x.n.name)}</td><td>${esc(x.n.d.resp || "")}</td><td>${esc(cohRefName(x.n))}</td><td><b>${cohRangeTxt(x.v)}</b></td><td class="nd">${x.v.mean != null ? x.v.mean.toFixed(3) : "—"}</td><td class="nd">${x.v.la != null ? x.v.pct + " %" : "—"}</td><td>${x.v.dips.length ? x.v.dips.map(b => fLab(b.nom)).join(", ") : x.v.la != null ? "none" : ""}</td></tr>`).join("")}</tbody></table></div>`;
+  const h = `<div class="sec-h"><h4>1/3-octave median coherence</h4><span class="hint"><span style="background:${cohCell(1, thr)};padding:0 5px">≥ ${thr}</span> <span style="background:${cohCell(0.7, thr)};padding:0 5px">0.5 – ${thr}</span> <span style="background:${cohCell(0.1, thr)};padding:0 5px">&lt; 0.5</span></span><span class="sp"><button class="btn" id="cohCopy">Copy table</button></span></div>
+  <div class="tblwrap"><table class="list" id="cohH" style="font-size:11.5px"><thead><tr><th>Band [Hz]</th>${used.map(b => `<th class="n">${fLab(b.nom)}</th>`).join("")}</tr></thead><tbody>
+  ${st.map(x => { const bs = cohBands(x.n.d); return `<tr><td>${esc(x.n.d.resp || x.n.name)}</td>${used.map(b => { const r = bs[COH_BANDS.indexOf(b)]; return `<td class="n" style="background:${r ? cohCell(r.med, thr) : ""};padding:4px 5px">${r ? r.med.toFixed(2) : ""}</td>`; }).join("")}</tr>`; }).join("")}</tbody></table></div>`;
+  return q + h;
+}
+function bindCohTables(ids){
+  const t = $("#cohQ"); if (t) t.onclick = e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; UI.sel = new Set([tr.dataset.id]); UI.active = tr.dataset.id; renderTree(); renderView(); };
+  const cp = $("#cohCopy"); if (cp) cp.onclick = () => { const used = COH_BANDS.filter((b, j) => ids.some(id => cohBands(N(id).d)[j]));
+    const rows = [["Band [Hz]", ...used.map(b => b.nom)], ...ids.map(id => { const bs = cohBands(N(id).d); return [N(id).d.resp || N(id).name, ...used.map(b => { const r = bs[COH_BANDS.indexOf(b)]; return r ? r.med.toFixed(3) : ""; })]; })];
+    navigator.clipboard.writeText(rows.map(r => r.join("\t")).join("\n")).then(() => toast("Table copied — paste it into Excel"), () => toast("Copy not allowed here")); };
+}
+function cohOpts(ids, K){ const nodes = ids.map(N).filter(Boolean); return { curves: nodes.map((n, i) => cohCurve(n, nodes.length === 1 ? NB_BLUE : K.pal[i % K.pal.length])), thr: cohThr(), smooth: UI.cohSm || "both", layout: UI.cohLay || "overlay", cur: UI.frfCur, z: UI.frfZ }; }
+function renderCoh(n){
+  const v = $("#view"); const d = n.d; FRFV = { id: n.id, coh: true }; const cv = cohValid(d, cohThr());
+  v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${esc(["FILES", ...pathOf(n.parent)].join(" \\ "))} · coherence</div><h2>${esc(n.name)}</h2></div>
+    <div class="big"><div><div class="k">Good range <span style="text-transform:none">γ²</span> ≥ ${cohThr()}</div><div class="v" style="font-size:22px">${cohRangeTxt(cv)}</div></div><div class="alt"><div class="k">Mean <span style="text-transform:none">γ²</span> in range</div><div class="v">${cv.mean != null ? cv.mean.toFixed(3) : "—"}</div></div><div class="alt"><div class="k">Dips</div><div class="v" style="font-size:18px">${cv.dips.length ? cv.dips.map(b => fLab(b.nom)).join(", ") : "none"}</div></div></div></div>
+    <div class="info"><div><span>Source</span><b>${esc(d.src || "—")}</b></div><div><span>Response</span><b>${esc(d.resp || "—")}</b></div><div><span>Reference</span><b>${esc(cohRefName(n) || "—")}</b></div><div><span>Lines</span><b>${d.n} · Δf ${+d.df.toFixed(4)} Hz</b></div></div>
+    ${cohCtrlsHtml(false, "fImg")}
+    <div class="chartwrap"><div class="chartbox" style="height:440px"><canvas id="fC" tabindex="0" aria-label="Coherence"></canvas></div><div class="readout" id="fR"></div></div>
+    ${cohTablesHtml([n.id])}`;
+  bindCohCtrls(drawFrfView); bindCohTables([n.id]);
+  $("#fImg").onclick = () => frfReportDialog([n.id]);
+  drawFrfView();
+}
+
+/* ---------- single FRF view ---------- */
 function renderFrf(n){
+  if (n.d.kind === "coh") return renderCoh(n);
   const v = $("#view"); const d = n.d; const t = UI.frfT || "acc"; FRFV = { id: n.id };
-  const isCoh = d.kind === "coh";
-  const ms = !isCoh && d.dp ? frfMassStiff(d) : null;
-  const crumb = esc(["FILES", ...pathOf(n.parent)].join(" \\ ")) + (isCoh ? " · coherence" : " · FRF");
+  const ms = d.dp ? frfMassStiff(d) : null; const cv = d.cohId && N(d.cohId) ? cohValid(N(d.cohId).d, cohThr()) : null;
+  const crumb = esc(["FILES", ...pathOf(n.parent)].join(" \\ ")) + " · FRF";
   v.innerHTML = `<div class="vh"><div class="ttl"><div class="crumb">${crumb}</div><h2>${esc(n.name)}</h2></div>
     ${ms && ms.k && ms.m ? `<div class="big"><div><div class="k">Stiffness k</div><div class="v">${fmtSci(ms.k/1e6)}<small>kN/mm</small></div></div><div class="alt"><div class="k">Mass m</div><div class="v">${fmtSci(ms.m)}<small>kg</small></div></div><div class="alt"><div class="k">Lines cross at</div><div class="v">${ms.f0 ? ms.f0.toFixed(1) : "—"}<small>Hz</small></div></div></div>` : ""}</div>
-    <div class="info"><div><span>Source</span><b>${esc(d.src || "—")}</b></div>${!isCoh ? `<div><span>Response</span><b>${esc(d.resp || "—")}</b></div><div><span>Reference</span><b>${esc(d.refName || "—")}</b></div><div><span>Measured as</span><b>${esc(d.units || "")}</b></div>` : ""}<div><span>Lines</span><b>${d.n} · Δf ${+d.df.toFixed(4)} Hz</b></div></div>
-    ${!isCoh ? `<div class="ctrls">
+    <div class="info"><div><span>Source</span><b>${esc(d.src || "—")}</b></div><div><span>Response</span><b>${esc(d.resp || "—")}</b></div><div><span>Reference</span><b>${esc(d.refName || "—")}</b></div><div><span>Measured as</span><b>${esc(d.units || "")}</b></div><div><span>Lines</span><b>${d.n} · Δf ${+d.df.toFixed(4)} Hz</b></div>${cv ? `<div><span>Coherence γ² ≥ ${cohThr()}</span><b>${cohRangeTxt(cv)}</b></div>` : ""}</div>
+    <div class="ctrls">
       <label for="fT">Show as <select id="fT">${Object.entries(FRF_T).map(([k, x]) => `<option value="${k}" ${k === t ? "selected" : ""}>${x.l} ${x.s} [${x.u}]</option>`).join("")}</select></label>
       <label>Y axis <span class="seg" id="fY"><button data-y="log" aria-pressed="${!UI.frfDb}">Log</button><button data-y="db" aria-pressed="${!!UI.frfDb}">dB</button></span></label>
       <label><input type="checkbox" id="fPh" ${UI.frfPh !== false ? "checked" : ""}> Phase</label>
+      <label><input type="checkbox" id="fCo" ${UI.frfCo !== false ? "checked" : ""}> Coherence</label>
       <label><input type="checkbox" id="fDp" ${d.dp ? "checked" : ""}> Driving point (response at the impact point)</label>
-      <span class="sp" style="display:flex;gap:6px"><button class="btn primary" id="fImg">Report image…</button></span></div>` : ""}
+      <span class="sp" style="display:flex;gap:6px"><button class="btn primary" id="fImg">Report image…</button></span></div>
     ${ms ? `<div class="proc"><div class="grid">
       <label>Stiffness line fitted on <input type="number" id="fKa" step="any" value="${+ms.ka.toFixed(2)}"> – <input type="number" id="fKb" step="any" value="${+ms.kb.toFixed(2)}"> Hz</label>
       <label>Mass line fitted on <input type="number" id="fMa" step="any" value="${+ms.ma.toFixed(1)}"> – <input type="number" id="fMb" step="any" value="${+ms.mb.toFixed(1)}"> Hz</label>
@@ -3688,25 +3820,26 @@ function renderFrf(n){
       <div class="hint">Driving point: k = median of ω²/|A| over the stiffness range (stiffness-controlled, below the first resonance), m = median of 1/|A| over the mass range (mass-controlled); only lines with coherence ≥ 0.8 are used. The lines are drawn in the chosen form of the FRF. Pick ranges where the curve follows the line and the coherence is close to 1.</div></div>` : ""}
     <div class="chartwrap"><div class="chartbox" style="height:560px"><canvas id="fC" tabindex="0" aria-label="FRF"></canvas></div><div class="readout" id="fR"></div></div>`;
   const re = () => renderView();
-  if ($("#fT")) $("#fT").onchange = e => { UI.frfT = e.target.value; re(); };
-  if ($("#fY")) $("#fY").onclick = e => { const b = e.target.closest("button[data-y]"); if (!b) return; UI.frfDb = b.dataset.y === "db"; re(); };
-  if ($("#fPh")) $("#fPh").onchange = e => { UI.frfPh = e.target.checked; drawFrfView(); };
-  if ($("#fDp")) $("#fDp").onchange = e => { commit(() => { N(n.id).d.dp = e.target.checked; }); re(); };
+  $("#fT").onchange = e => { UI.frfT = e.target.value; re(); };
+  $("#fY").onclick = e => { const b = e.target.closest("button[data-y]"); if (!b) return; UI.frfDb = b.dataset.y === "db"; re(); };
+  $("#fPh").onchange = e => { UI.frfPh = e.target.checked; drawFrfView(); };
+  $("#fCo").onchange = e => { UI.frfCo = e.target.checked; drawFrfView(); };
+  $("#fDp").onchange = e => { commit(() => { N(n.id).d.dp = e.target.checked; }); re(); };
   if ($("#fMs")) $("#fMs").onchange = e => { UI.frfMs = e.target.checked; drawFrfView(); };
   ["fKa", "fKb", "fMa", "fMb"].forEach(id => { const el = $("#" + id); if (el) el.onchange = () => { const g = x => parseFloat($("#" + x).value); commit(() => { N(n.id).d.fit = { ka: g("fKa"), kb: g("fKb"), ma: g("fMa"), mb: g("fMb") }; }); re(); }; });
-  if ($("#fImg")) $("#fImg").onclick = () => frfImageDialog([n.id]);
+  $("#fImg").onclick = () => frfReportDialog([n.id]);
   drawFrfView();
 }
 function frfOpts(ids, K){
   const t = UI.frfT || "acc"; const nodes = ids.map(N).filter(Boolean);
-  const curves = nodes.map((n, i) => frfCurve(n, t, nodes.length === 1 ? NB_BLUE : K.pal[i % K.pal.length]));
-  let lines = [], ranges = []; const one = nodes.length === 1 && nodes[0].d.kind === "frf" && nodes[0].d.dp;
+  const curves = nodes.map((n, i) => frfCurve(n, t, nodes.length === 1 ? NB_BLUE : K.pal[i % K.pal.length], UI.frfCo !== false));
+  let lines = [], ranges = []; const one = nodes.length === 1 && nodes[0].d.dp;
   if (one && UI.frfMs !== false){ const r = msLines(nodes[0].d, t); lines = r.lines; ranges = r.ranges; }
-  const allCoh = nodes.every(n => n.d.kind === "coh");
-  return { curves, lines, ranges, ydb: !!UI.frfDb, yLab: allCoh ? "" : `${FRF_T[t].s}  [${UI.frfDb ? "dB re 1 " : ""}${FRF_T[t].u}]`, phase: allCoh ? false : (nodes.length === 1 && UI.frfPh !== false), cur: UI.frfCur, z: UI.frfZ };
+  return { curves, lines, ranges, ydb: !!UI.frfDb, yLab: `${FRF_T[t].s}  [${UI.frfDb ? "dB re 1 " : ""}${FRF_T[t].u}]`, phase: nodes.length === 1 && UI.frfPh !== false, cur: UI.frfCur, z: UI.frfZ };
 }
 function drawFrfView(){
   if (!FRFV) return; const n = N(FRFV.id); if (!n) return; const g = canvasInto("fC"); if (!g) return; const K = screenColors();
+  if (n.d.kind === "coh"){ const geo = drawCoh(g.c, 0, 0, g.W, g.H, K, cohOpts([n.id], K)); FRFV.geo = geo; cohReadout(geo, "fR"); bindFrfCanvas("fC", () => FRFV && FRFV.geo, drawFrfView); return; }
   const geo = drawFrf(g.c, 0, 0, g.W, g.H, K, frfOpts([n.id], K)); FRFV.geo = geo; frfReadout(geo, "fR"); bindFrfCanvas("fC", () => FRFV && FRFV.geo, drawFrfView);
 }
 function frfReadout(geo, id){ const el = $("#" + id); if (!el) return; const t = UI.frfT || "acc";
@@ -3721,48 +3854,195 @@ function bindFrfCanvas(id, geoFn, redraw){
     a = Math.max(geo.fMinAll, a); b = Math.min(geo.fMaxAll, b); if (b/a < 1.05) return; UI.frfZ = (a <= geo.fMinAll*1.0001 && b >= geo.fMaxAll*0.9999) ? null : [a, b]; redraw(); };
   cv.ondblclick = () => { UI.frfZ = null; redraw(); };
 }
-/* folder: all its FRFs (or coherences) together */
+/* folder: all its FRFs, or all its coherences */
 function frfSummaryHtml(ids){
   const fr = ids.filter(id => N(id).d.kind === "frf"), co = ids.filter(id => N(id).d.kind === "coh"); const t = UI.frfT || "acc";
-  return `<div class="sec-h"><h4>${fr.length ? `FRF (${fr.length})` : `Coherence (${co.length})`}</h4><span class="hint">Click a name to open it · the driving point is marked ●</span><span class="sp" style="display:flex;gap:6px">${fr.length ? `<select id="fsT" aria-label="FRF form">${Object.entries(FRF_T).map(([k, x]) => `<option value="${k}" ${k === t ? "selected" : ""}>${x.l} [${x.u}]</option>`).join("")}</select><button class="btn primary" id="fsImg">Report image…</button>` : ""}</span></div>
+  if (!fr.length){ const n = co.length;
+    return `<div class="sec-h"><h4>Coherence (${n})</h4><span class="hint">γ² from 0 to 1: close to 1 the response is fully explained by the hammer force. Thin lines: every spectral line · thick steps: median of each 1/3-octave band.</span></div>
+    ${cohCtrlsHtml(n > 1, "fsImg")}
+    <div class="chartwrap"><div class="chartbox" style="height:${(UI.cohLay || "overlay") === "stack" && n > 1 ? Math.max(420, 150*n + 50) : 440}px"><canvas id="fsC" aria-label="Coherence overlay"></canvas></div><div class="readout" id="fsR"></div></div>
+    ${cohTablesHtml(co)}`; }
+  const thr = cohThr();
+  return `<div class="sec-h"><h4>FRF (${fr.length})</h4><span class="hint">Click a name to open it · the driving point is marked ●</span><span class="sp" style="display:flex;gap:10px;align-items:center"><label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="fsCo" ${UI.frfCo !== false ? "checked" : ""}> Coherence</label><select id="fsT" aria-label="FRF form">${Object.entries(FRF_T).map(([k, x]) => `<option value="${k}" ${k === t ? "selected" : ""}>${x.l} [${x.u}]</option>`).join("")}</select><button class="btn primary" id="fsImg">Report image…</button></span></div>
   <div class="chartwrap"><div class="chartbox" style="height:480px"><canvas id="fsC" aria-label="FRF overlay"></canvas></div><div class="readout" id="fsR"></div></div>
-  <div class="tblwrap"><table class="list" id="fsT2"><thead><tr><th></th><th>Name</th><th>Response</th><th>Reference</th><th>Driving point</th></tr></thead><tbody>
-  ${(fr.length ? fr : co).map((id, i) => { const n = N(id); return `<tr data-id="${id}" style="cursor:pointer"><td><span style="display:inline-block;width:14px;height:3px;background:var(--s${(i % 10) + 1})"></span></td><td>${esc(n.name)}</td><td>${esc(n.d.resp || "")}</td><td>${esc(n.d.refName || "")}</td><td>${n.d.dp ? "●" : ""}</td></tr>`; }).join("")}</tbody></table></div>`;
+  <div class="tblwrap"><table class="list" id="fsT2"><thead><tr><th></th><th>Name</th><th>Response</th><th>Reference</th><th>Driving point</th><th>Coherence γ² ≥ ${thr}</th><th class="nd">Mean γ²</th></tr></thead><tbody>
+  ${fr.map((id, i) => { const n = N(id); const cv = n.d.cohId && N(n.d.cohId) ? cohValid(N(n.d.cohId).d, thr) : null; return `<tr data-id="${id}" style="cursor:pointer"><td><span style="display:inline-block;width:14px;height:3px;background:var(--s${(i % 10) + 1})"></span></td><td>${esc(n.name)}</td><td>${esc(n.d.resp || "")}</td><td>${esc(n.d.refName || "")}</td><td>${n.d.dp ? "●" : ""}</td><td>${cv ? cohRangeTxt(cv) : "—"}</td><td class="nd">${cv && cv.mean != null ? cv.mean.toFixed(3) : "—"}</td></tr>`; }).join("")}</tbody></table></div>`;
 }
 function bindFrfSummary(ids){
-  const fr = ids.filter(id => N(id).d.kind === "frf"); const use = fr.length ? fr : ids;
+  const fr = ids.filter(id => N(id).d.kind === "frf"); const use = fr.length ? fr : ids.filter(id => N(id).d.kind === "coh");
   const t2 = $("#fsT2"); if (t2) t2.onclick = e => { const tr = e.target.closest("tr[data-id]"); if (!tr) return; UI.sel = new Set([tr.dataset.id]); UI.active = tr.dataset.id; renderTree(); renderView(); };
   if ($("#fsT")) $("#fsT").onchange = e => { UI.frfT = e.target.value; renderView(); };
-  if ($("#fsImg")) $("#fsImg").onclick = () => frfImageDialog(use);
-  let geo = null; const draw = () => { const g = canvasInto("fsC"); if (!g) return; const K = screenColors(); const o = frfOpts(use, K); o.phase = false; geo = drawFrf(g.c, 0, 0, g.W, g.H, K, o); frfReadout(geo, "fsR"); };
+  if ($("#fsImg")) $("#fsImg").onclick = () => frfReportDialog(use);
+  let geo = null; const isC = !fr.length;
+  const draw = () => { const g = canvasInto("fsC"); if (!g) return; const K = screenColors();
+    if (isC){ geo = drawCoh(g.c, 0, 0, g.W, g.H, K, cohOpts(use, K)); cohReadout(geo, "fsR"); return; }
+    const o = frfOpts(use, K); o.phase = false; geo = drawFrf(g.c, 0, 0, g.W, g.H, K, o); frfReadout(geo, "fsR"); };
+  if ($("#fsCo")) $("#fsCo").onchange = e => { UI.frfCo = e.target.checked; draw(); };
+  if (isC){ bindCohCtrls(draw); bindCohTables(use); }
   draw(); FRFSUM = draw; bindFrfCanvas("fsC", () => geo, draw);
 }
-function frfImageDialog(ids){
+
+/* ---------- FRF / coherence report images: same options as the spectra, saved with the folder (N(folder).frep) ---------- */
+const FREP_DEF = () => ({ aspect: "4:3", width: 1600, cw: 1600, ch: 1200, fh: 1, fn: 1, ft: 1, lwk: 1, cursor: false, footer: true, phase: true, coh: true, lines: true, ranges: true, lineLab: true, fa: "", fb: "",
+  form: UI.frfT || "acc", ydb: !!UI.frfDb, thr: cohThr(), smooth: UI.cohSm || "both", layout: UI.cohLay || "overlay",
+  hd: { kicker: true, title: true, result: true, subtitle: true }, lg: { pos: "right", head: true, values: true, lines: true, cval: "range" } });
+function frepTexts(ids, st){
+  const nodes = ids.map(N); const one = nodes.length === 1, d0 = nodes[0].d, isC = d0.kind === "coh"; const F = FRF_T[st.form] || FRF_T.acc;
+  const refs = [...new Set(nodes.map(n => n.d.kind === "coh" ? cohRefName(n) : n.d.refName).filter(Boolean))].join(", "); const dpn = nodes.find(n => n.d.dp);
+  const kicker = isC ? "COHERENCE · IMPACT TEST" : `${F.l.toUpperCase()} · IMPACT TEST`;
+  const title = one ? nodes[0].name : (pathOf(nodes[0].parent).slice(-2).join(" / ") || (isC ? "Coherence" : "FRF"));
+  let result = ""; if (one && !isC && d0.dp){ const ms = frfMassStiff(d0); if (ms && ms.k && ms.m) result = `k = ${fmtSci(ms.k/1e6)} kN/mm · m = ${fmtSci(ms.m)} kg`; }
+  if (one && isC){ const cv = cohValid(d0, st.thr); result = `γ² ≥ ${st.thr}: ${cohRangeTxt(cv)}`; }
+  const sub = isC ? (one ? `Response ${d0.resp || ""} · Reference ${refs} · thin: spectral lines, thick: 1/3-octave median · threshold γ² = ${st.thr}` : `${nodes.length} coherences · reference ${refs} · threshold γ² = ${st.thr}`)
+    : (one ? `Response ${d0.resp || ""} · Reference ${d0.refName || ""}${d0.dp ? " · driving point" : ""} · ${F.l} [${F.u}] · Δf ${+d0.df.toFixed(3)} Hz` : `${nodes.length} FRF · ${F.l} [${F.u}] · reference ${refs}${dpn ? ` · driving point ${dpn.d.resp}` : ""}`);
+  const src = [...new Set(nodes.map(n => n.d.src).filter(Boolean))].join(", ");
+  return { kicker, title, result, sub, footer: `Folder: ${pathOf(nodes[0].parent).join(" / ") || "—"}${src ? " · Source: " + src : ""}` };
+}
+function frepWH(st){ if (st.aspect === "custom") return [Math.max(400, Math.min(6000, +st.cw || 1600)), Math.max(300, Math.min(6000, +st.ch || 1200))]; const [a, b] = REPORT_ASPECT[st.aspect] || [4, 3]; return [st.width, Math.round(st.width*b/a)]; }
+function frepRender(ids, st, over = {}){
+  const [W, H] = frepWH(st); const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"); const K = REPORT_COLORS; c.fillStyle = "#fff"; c.fillRect(0, 0, W, H);
+  const sc = Math.min(W, H*1.9)/760, fh = st.fh || 1, pad = 24*sc; const nodes = ids.map(N); const one = nodes.length === 1, isC = nodes[0].d.kind === "coh";
+  const tx = { ...frepTexts(ids, st), ...over };
+  // header
+  let y = pad; c.textBaseline = "top"; c.textAlign = "left";
+  if (st.hd.kicker){ c.fillStyle = K.muted; c.font = `600 ${10.5*sc*fh*FS}px ${K.sans}`; c.fillText(tx.kicker.split("").join(String.fromCharCode(8202)), pad, y); y += 18*sc*fh; }
+  if (st.hd.title || (st.hd.result && tx.result)){ c.fillStyle = K.ink; c.font = `600 ${15*sc*fh*FS}px ${K.sans}`; let rw = 0;
+    if (st.hd.result && tx.result){ c.textAlign = "right"; c.fillText(tx.result, W - pad, y); rw = c.measureText(tx.result).width + 20*sc; c.textAlign = "left"; }
+    if (st.hd.title) c.fillText(ellipsize(c, tx.title, W - 2*pad - rw), pad, y); y += 24*sc*fh; }
+  if (st.hd.subtitle && tx.sub){ c.fillStyle = K.muted; c.font = `${12*sc*fh*FS}px ${K.sans}`; c.fillText(ellipsize(c, tx.sub, W - 2*pad), pad, y); y += 20*sc*fh; }
+  if (y > pad){ y += 4*sc; c.strokeStyle = K.line; c.lineWidth = sc; c.beginPath(); c.moveTo(pad, y); c.lineTo(W - pad, y); c.stroke(); y += 8*sc; }
+  const top = y; const bottom0 = H - pad - (st.footer ? 16*sc : 0);
+  // chart options
+  const fa = parseFloat(st.fa), fb = parseFloat(st.fb); const z = isFinite(fa) || isFinite(fb) ? [isFinite(fa) ? fa : 0, isFinite(fb) ? fb : 1e9] : null;
+  let o, lines = [];
+  if (isC){ o = { curves: nodes.map((n, i) => cohCurve(n, one ? NB_BLUE : K.pal[i % K.pal.length])), thr: st.thr, smooth: st.smooth, layout: st.layout }; }
+  else { const t = st.form; o = { curves: nodes.map((n, i) => frfCurve(n, t, one ? NB_BLUE : K.pal[i % K.pal.length], st.coh)), ydb: st.ydb, yLab: `${FRF_T[t].s}  [${st.ydb ? "dB re 1 " : ""}${FRF_T[t].u}]`, phase: st.phase, lines: [], ranges: [] };
+    if (one && nodes[0].d.dp && st.lines){ const r = msLines(nodes[0].d, t); lines = r.lines; o.lines = lines; if (st.ranges) o.ranges = r.ranges; o.noLineLab = !st.lineLab; } }
+  Object.assign(o, { scale: sc, fn: st.fn || 1, ft: st.ft || 1, lwk: st.lwk || 1, z, print: true, head: true, cur: st.cursor ? UI.frfCur : null });
+  // legend rows
+  const fs = st.lg.fs || 1;
+  const curF = st.cursor && UI.frfCur ? UI.frfCur : null; const rows = [];
+  const atCur = (cv, arr) => { if (!curF) return null; let i = Math.round((curF - cv.f[0])/((cv.f[1] - cv.f[0]) || 1)); i = Math.max(0, Math.min(cv.f.length - 1, i)); return arr[i]; };
+  if (isC){ o.curves.forEach(cv => { const v = cohValid(cv.d, st.thr); const cval = st.lg.cval === "cursor" && !curF ? "range" : st.lg.cval;
+      rows.push({ name: cv.name.replace(/ · coherence$/, ""), color: cv.color, val: cval === "mean" ? (v.mean != null ? v.mean.toFixed(3) : "—") : cval === "cursor" ? (() => { const x = atCur(cv, cv.coh); return isFinite(x) ? (+x).toFixed(3) : "—"; })() : cohRangeShort(v) }); }); }
+  else { o.curves.forEach((cv, i) => { const m = atCur(cv, cv.mag); rows.push({ name: cv.name + (!one && nodes[i].d.dp ? " ●" : ""), color: cv.color, val: m > 0 ? fmtSci(m, 4) : null });
+      if (one && curF){ const p = atCur(cv, cv.ph); if (o.phase && p != null) rows.push({ name: "phase", sub: true, val: `${p.toFixed(1)}°` }); const q = cv.coh ? atCur(cv, cv.coh) : null; if (q != null && isFinite(q)) rows.push({ name: "coherence", sub: true, val: (+q).toFixed(3) }); } });
+    if (st.lg.lines && lines.length){ rows.push({ gap: true }); lines.forEach(ln => rows.push({ name: ln.short, color: ln.color, dash: true, val: ln.val })); const ms = frfMassStiff(nodes[0].d); if (ms && ms.f0) rows.push({ name: "Lines cross at", sub: true, val: `${ms.f0.toFixed(0)} Hz` }); } }
+  const head = isC ? (st.lg.cval === "mean" ? "Mean γ² in range" : st.lg.cval === "cursor" && curF ? `γ² at ${+curF.toFixed(1)} Hz` : `Good range γ² ≥ ${st.thr}`) : (curF ? `Values at ${+curF.toFixed(1)} Hz` : (one ? "Legend" : "FRF"));
+  const pos = st.lg.pos, showV = st.lg.values !== false; const rowH = 21*sc*fs;
+  let legW = 0, legH = 0; if (pos === "right") legW = 240*sc*fs; if (pos === "below") legH = (st.lg.head ? 24*sc*fs : 0) + rows.length*rowH + 10*sc;
+  const bottom = bottom0 - legH, chartW = W - 2*pad - (legW ? legW + 16*sc : 0);
+  if (isC) drawCoh(c, pad - 10*sc, top, chartW + 10*sc, bottom - top, K, o); else drawFrf(c, pad - 10*sc, top, chartW + 10*sc, bottom - top, K, o);
+  const drawRow = (r, lx, ly, w) => { if (r.gap) return;
+    if (r.color){ c.strokeStyle = r.color; c.lineWidth = 2.6*sc*fs; if (r.dash) c.setLineDash([5*sc, 3*sc]); c.beginPath(); c.moveTo(lx, ly + rowH/2); c.lineTo(lx + 18*sc*fs, ly + rowH/2); c.stroke(); c.setLineDash([]); }
+    const nx = lx + (r.color ? 26*sc*fs : r.sub ? 26*sc*fs : 0); c.fillStyle = r.sub ? K.muted : K.ink; c.font = `${r.sub ? "" : "500 "}${12.5*sc*fs*FS}px ${K.sans}`; c.textAlign = "left"; c.textBaseline = "middle";
+    const vw = showV && r.val != null ? (c.font = `${12.5*sc*fs*FS}px ${K.mono}`, c.measureText(String(r.val)).width + 10*sc) : 0; c.font = `${r.sub ? "" : "500 "}${12.5*sc*fs*FS}px ${K.sans}`;
+    c.fillText(ellipsize(c, r.name, w - (nx - lx) - vw), nx, ly + rowH/2);
+    if (vw){ c.textAlign = "right"; c.font = `${12.5*sc*fs*FS}px ${K.mono}`; c.fillText(String(r.val), lx + w, ly + rowH/2); }
+    c.strokeStyle = K.line; c.lineWidth = sc; c.setLineDash([1*sc, 2*sc]); c.beginPath(); c.moveTo(lx, ly + rowH); c.lineTo(lx + w, ly + rowH); c.stroke(); c.setLineDash([]); };
+  if (pos === "right"){ const lx = pad + chartW + 16*sc; let ly = top + 6*sc;
+    if (st.lg.head){ c.fillStyle = K.muted; c.font = `600 ${10.5*sc*fs*FS}px ${K.sans}`; c.textAlign = "left"; c.textBaseline = "middle"; c.fillText(head.toUpperCase().replace(/Γ/g, "γ"), lx, ly + 6*sc); ly += 20*sc*fs; }
+    for (const r of rows){ if (ly + rowH > bottom0) break; drawRow(r, lx, ly, legW); ly += r.gap ? rowH*0.5 : rowH; } }
+  else if (pos === "below"){ let ly = bottom + 8*sc; const w = Math.min(W - 2*pad, 560*sc*fs);
+    if (st.lg.head){ c.fillStyle = K.muted; c.font = `600 ${10.5*sc*fs*FS}px ${K.sans}`; c.textAlign = "left"; c.textBaseline = "middle"; c.fillText(head.toUpperCase().replace(/Γ/g, "γ"), pad, ly + 8*sc); ly += 24*sc*fs; }
+    for (const r of rows){ drawRow(r, pad, ly, w); ly += r.gap ? rowH*0.5 : rowH; } }
+  if (st.footer){ c.fillStyle = K.muted; c.font = `${10*sc*FS}px ${K.mono}`; c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText(ellipsize(c, tx.footer, W - 2*pad), pad, H - pad + 4*sc); }
+  return cv;
+}
+async function saveImageSet(files, zipName){
+  if (!files.length){ toast("No images to save"); return; }
+  reportBatch.last = files;
+  if (typeof window.showDirectoryPicker === "function"){
+    try { const dir = await window.showDirectoryPicker({ mode: "readwrite" }); for (const f of files){ const h = await dir.getFileHandle(f.name, { create: true }); await writeHandle(h, f.data); } toast(`Saved ${files.length} images in ${dir.name}`); return; }
+    catch(e){ if (e && e.name === "AbortError") return; }
+  }
+  await saveWithPicker(zipName, makeZip(files), "ZIP archive", "application/zip", ".zip");
+}
+function frfReportDialog(ids){
+  ids = ids.filter(id => N(id)); if (!ids.length) return;
+  const nodes = ids.map(N); const isC = nodes[0].d.kind === "coh", one = nodes.length === 1, kind = nodes[0].d.kind;
+  const key = nodes.every(n => n.parent === nodes[0].parent) ? nodes[0].parent : null; const saved = key && N(key) ? N(key).frep : null;
+  const DEF = FREP_DEF(); const base = saved || frfReportDialog.state || DEF;
+  const st = JSON.parse(JSON.stringify({ ...DEF, ...base, hd: { ...DEF.hd, ...(base.hd || {}) }, lg: { ...DEF.lg, ...(base.lg || {}) } }));
+  if (!saved){ st.subEdited = false; st.sub = ""; st.all = false; }
+  const sibs = key ? measUnder(key).filter(id => N(id).d.kind === kind) : [];
+  const ck = (id, on, lab) => `<label><input type="checkbox" id="${id}" ${on ? "checked" : ""}> ${lab}</label>`;
+  const pct = (id, v, arr, lab) => `<label for="${id}">${lab} <select id="${id}">${arr.map(x => `<option value="${x}" ${Math.abs(x - (v || 1)) < 1e-6 ? "selected" : ""}>${Math.round(x*100)} %</option>`).join("")}</select></label>`;
+  const SZ = [0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
+  const dp = one && !isC && nodes[0].d.dp; const tx0 = frepTexts(ids, st);
   const b = document.createElement("div"); b.style.display = "contents";
-  b.innerHTML = `<div class="opts"><label for="fiSize">Size <select id="fiSize">${["1600x1200", "1600x900", "1200x900", "1600x1600", "1200x1200", "2400x1800"].map(x => `<option>${x}</option>`).join("")}</select></label><label><input type="checkbox" id="fiCur" ${UI.frfCur ? "checked" : ""}> Cursor</label></div><img class="prev" id="fiPrev" alt="FRF chart preview">`;
-  let cv; const build = () => {
-    const [W, H] = b.querySelector("#fiSize").value.split("x").map(Number); const sc = Math.min(W, H*1.9)/760; cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"); const K = REPORT_COLORS; c.fillStyle = "#fff"; c.fillRect(0, 0, W, H);
-    const nodes = ids.map(N); const t = UI.frfT || "acc"; const one = nodes.length === 1; const d0 = nodes[0].d;
-    const pad = 24*sc; c.textBaseline = "top"; c.textAlign = "left"; c.fillStyle = K.muted; c.font = `600 ${10.5*sc*FS}px ${K.sans}`; c.fillText(`${FRF_T[t].l.toUpperCase()} · IMPACT TEST`.split("").join(String.fromCharCode(8202)), pad, pad);
-    c.fillStyle = K.ink; c.font = `600 ${15*sc*FS}px ${K.sans}`; c.fillText(one ? nodes[0].name : (pathOf(nodes[0].parent).slice(-2).join(" / ") || "FRF"), pad, pad + 18*sc);
-    const ms = one && d0.dp ? frfMassStiff(d0) : null; if (ms && ms.k && ms.m){ c.textAlign = "right"; c.fillText(`k = ${fmtSci(ms.k/1e6)} kN/mm · m = ${fmtSci(ms.m)} kg`, W - pad, pad + 18*sc); c.textAlign = "left"; }
-    c.fillStyle = K.muted; c.font = `${12*sc*FS}px ${K.sans}`; c.fillText(one ? `Response ${d0.resp || ""} · Reference ${d0.refName || ""}${d0.dp ? " · driving point" : ""}` : `${nodes.length} FRF`, pad, pad + 44*sc);
-    const top = pad + 70*sc; c.strokeStyle = K.line; c.lineWidth = sc; c.beginPath(); c.moveTo(pad, top - 6*sc); c.lineTo(W - pad, top - 6*sc); c.stroke();
-    const o = frfOpts(ids, K); o.scale = sc; o.head = true; if (!b.querySelector("#fiCur").checked) o.cur = null; if (!one) o.phase = false;
-    let legH = one ? 0 : (nodes.length*18 + 10)*sc;
-    drawFrf(c, pad - 10*sc, top, W - 2*pad + 10*sc, H - top - pad - legH, K, o);
-    if (!one) nodes.forEach((n, i) => { const y = H - pad - legH + (8 + i*18)*sc; c.strokeStyle = o.curves[i].color; c.lineWidth = 2.4*sc; c.beginPath(); c.moveTo(pad, y + 7*sc); c.lineTo(pad + 22*sc, y + 7*sc); c.stroke(); c.fillStyle = K.ink; c.font = `${12*sc*FS}px ${K.sans}`; c.textBaseline = "middle"; c.fillText(n.name + (n.d.dp ? "  (driving point)" : ""), pad + 30*sc, y + 7*sc); });
-    b.querySelector("#fiPrev").src = cv.toDataURL("image/png");
+  b.innerHTML = `<div class="repgrid"><div class="repctl">
+    <div class="hint" style="margin:-2px 0 2px">${key ? `Settings saved with “${esc(N(key).name)}”${saved ? "" : " (first time: starting from the last ones used)"}.` : "Selection: settings kept for this session only."} <a href="#" id="frReset">Reset</a></div>
+    ${(() => { const fs = Object.values(S.nodes).filter(f => f.t === "f" && f.frep && f.id !== key); return fs.length ? `<label for="frFrom" style="color:var(--muted)">Same as folder <select id="frFrom"><option value="">—</option>${fs.map(f => `<option value="${f.id}">${esc(pathOf(f.id).join(" / "))}</option>`).join("")}</select></label>` : ""; })()}
+    <div class="sec-h"><h4>Size</h4><span class="hint" id="frDpi"></span></div>
+    <div class="opts"><label for="frAsp">Shape <select id="frAsp">${Object.keys(REPORT_ASPECT).map(k => `<option value="${k}" ${k === st.aspect ? "selected" : ""}>${{ "16:9": "16:9 wide", "3:2": "3:2", "4:3": "4:3", "1:1": "1:1 square", "3:4": "3:4 portrait" }[k]}</option>`).join("")}<option value="custom" ${st.aspect === "custom" ? "selected" : ""}>Custom…</option></select></label>
+      <label for="frW" class="rstd">Width <select id="frW">${REPORT_WIDTHS.map(w => `<option value="${w}" ${w === st.width ? "selected" : ""}>${w} px</option>`).join("")}</select></label>
+      <label for="frCw" class="rcus">W <input type="number" id="frCw" min="400" max="6000" step="100" value="${st.cw}"></label><label for="frCh" class="rcus">H <input type="number" id="frCh" min="300" max="6000" step="100" value="${st.ch}"></label></div>
+    <div class="sec-h"><h4>Header</h4></div>
+    <div class="opts">${ck("fhK", st.hd.kicker, "Quantity line")}${ck("fhT", st.hd.title, "Title")}${ck("fhR", st.hd.result, isC ? "Good range" : "k and m")}${ck("fhS", st.hd.subtitle, "Details line")}${pct("frFh", st.fh, SZ, "Text size")}</div>
+    <label for="frTitle" style="color:var(--muted)">Title</label><input type="text" id="frTitle" value="${esc(tx0.title)}">
+    <label for="frSub" style="color:var(--muted)">Details line</label><input type="text" id="frSub" value="${esc(st.subEdited && st.sub ? st.sub : tx0.sub)}">
+    <div class="sec-h"><h4>Chart</h4></div>
+    ${isC ? `<div class="opts"><label for="frThr">Threshold γ² <select id="frThr">${[0.7, 0.8, 0.9, 0.95].map(v => `<option ${v === st.thr ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+      <label for="frSm">Show <select id="frSm"><option value="both" ${st.smooth === "both" ? "selected" : ""}>Lines + 1/3-octave median</option><option value="raw" ${st.smooth === "raw" ? "selected" : ""}>Lines only</option><option value="bands" ${st.smooth === "bands" ? "selected" : ""}>1/3-octave median only</option></select></label>
+      ${!one ? `<label for="frLay">Layout <select id="frLay"><option value="overlay" ${st.layout !== "stack" ? "selected" : ""}>Overlay</option><option value="stack" ${st.layout === "stack" ? "selected" : ""}>One panel each</option></select></label>` : ""}</div>`
+    : `<div class="opts"><label for="frForm">Form <select id="frForm">${Object.entries(FRF_T).map(([k, x]) => `<option value="${k}" ${k === st.form ? "selected" : ""}>${x.l} [${x.u}]</option>`).join("")}</select></label>
+      <label for="frY">Y axis <select id="frY"><option value="log" ${!st.ydb ? "selected" : ""}>Log</option><option value="db" ${st.ydb ? "selected" : ""}>dB</option></select></label></div>
+      <div class="opts">${ck("frPh", st.phase, "Phase panel")}${ck("frCo", st.coh, "Coherence panel")}${dp ? ck("frLn", st.lines, "Mass and stiffness lines") + ck("frRg", st.ranges, "Fit ranges shaded") + ck("frLl", st.lineLab, "Labels on the lines") : ""}</div>`}
+    <div class="opts"><label>Frequency <input type="number" id="frFa" step="any" min="0" placeholder="all" value="${esc(st.fa)}" style="width:70px" aria-label="From [Hz]"> – <input type="number" id="frFb" step="any" min="0" placeholder="all" value="${esc(st.fb)}" style="width:70px" aria-label="To [Hz]"> Hz</label> <a href="#" id="frZoom" title="Take the range zoomed on screen">as on screen</a></div>
+    <div class="opts">${pct("frFn", st.fn, SZ.slice(1), "Axis numbers")}${pct("frFt", st.ft, SZ.slice(1), "Axis titles")}${pct("frLw", st.lwk, [1, 1.5, 2, 2.5], "Curve thickness")}</div>
+    <div class="opts">${ck("frCur", st.cursor, `Cursor line${UI.frfCur ? ` (${+UI.frfCur.toFixed(1)} Hz)` : " (click the chart first)"}`)}${ck("frFoot", st.footer, "Footer with folder and source")}</div>
+    <div class="sec-h"><h4>Legend</h4></div>
+    <div class="opts"><label for="frLpos">Position <select id="frLpos"><option value="right" ${st.lg.pos === "right" ? "selected" : ""}>Right column</option><option value="below" ${st.lg.pos === "below" ? "selected" : ""}>Below the chart</option><option value="none" ${st.lg.pos === "none" ? "selected" : ""}>None</option></select></label>
+      ${isC ? `<label for="frCv">Values <select id="frCv"><option value="range" ${st.lg.cval === "range" ? "selected" : ""}>Good range</option><option value="mean" ${st.lg.cval === "mean" ? "selected" : ""}>Mean γ² in range</option><option value="cursor" ${st.lg.cval === "cursor" ? "selected" : ""}>At the cursor</option></select></label>` : ""}
+      ${ck("flH", st.lg.head, "Heading")}${ck("flV", st.lg.values, isC ? "Show values" : "Values at the cursor")}${dp ? ck("flL", st.lg.lines, "k, m and crossing") : ""}${pct("flFs", st.lg.fs, SZ.slice(1, 7), "Text size")}</div>
+    ${sibs.length > 1 ? `<div class="batch" style="display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:8px;border-top:1px solid var(--line)"><label><input type="checkbox" id="frAll" ${st.all ? "checked" : ""}> <b>Save all ${sibs.length} ${isC ? "coherences" : "FRF"} of “${esc(N(key).name)}”</b>, one PNG each with this appearance${one ? "" : " (plus this overlay)"}</label></div>` : ""}
+  </div><div class="repprev"><img class="prev" id="frPrev" alt="Report image preview"><div class="hint">${isC ? "Click the coherence chart to place a cursor before opening this." : "Click the FRF chart to place a cursor; mouse wheel zoom sets the range when you pick “as on screen”."}</div></div></div>`;
+  const g = id => b.querySelector("#" + id); const on = (id, d) => g(id) ? g(id).checked : d; let cv, gone = false, T = null;
+  const save = () => { frfReportDialog.state = JSON.parse(JSON.stringify(st)); if (!key || !N(key)) return; const js = JSON.stringify(st); if (JSON.stringify(N(key).frep || null) === js) return; N(key).frep = JSON.parse(js); setDirty(true); clearTimeout(T); T = setTimeout(persist, 800); };
+  const build = e => {
+    if (gone || (e && e.target && e.target.id === "frFrom")) return;
+    st.aspect = g("frAsp").value; st.width = +g("frW").value; st.cw = +g("frCw").value; st.ch = +g("frCh").value;
+    b.querySelectorAll(".rstd").forEach(x => x.style.display = st.aspect === "custom" ? "none" : ""); b.querySelectorAll(".rcus").forEach(x => x.style.display = st.aspect === "custom" ? "" : "none");
+    st.hd = { kicker: on("fhK", true), title: on("fhT", true), result: on("fhR", true), subtitle: on("fhS", true) }; st.fh = +g("frFh").value || 1;
+    if (isC){ st.thr = +g("frThr").value; st.smooth = g("frSm").value; if (g("frLay")) st.layout = g("frLay").value; }
+    else { st.form = g("frForm").value; st.ydb = g("frY").value === "db"; st.phase = on("frPh", true); st.coh = on("frCo", true); if (g("frLn")){ st.lines = on("frLn", true); st.ranges = on("frRg", true); st.lineLab = on("frLl", true); } }
+    st.fa = g("frFa").value; st.fb = g("frFb").value; st.fn = +g("frFn").value || 1; st.ft = +g("frFt").value || 1; st.lwk = +g("frLw").value || 1; st.cursor = on("frCur", false); st.footer = on("frFoot", true);
+    st.lg = { ...st.lg, pos: g("frLpos").value, head: on("flH", true), values: on("flV", true), lines: on("flL", st.lg.lines), fs: +g("flFs").value || 1, ...(g("frCv") ? { cval: g("frCv").value } : {}) };
+    if (g("frAll")) st.all = g("frAll").checked;
+    const tx = frepTexts(ids, st);
+    if (e && e.target && e.target.id === "frSub"){ st.subEdited = true; st.sub = g("frSub").value; } else if (!st.subEdited) g("frSub").value = tx.sub;
+    save();
+    const [W, H] = frepWH(st); g("frDpi").textContent = `${W} × ${H} px · ${(W/300*2.54).toFixed(1)} × ${(H/300*2.54).toFixed(1)} cm at 300 dpi`;
+    cv = frepRender(ids, st, { title: g("frTitle").value, ...(st.subEdited ? { sub: st.sub } : {}) }); g("frPrev").src = cv.toDataURL("image/png");
   };
-  b.addEventListener("change", build);
-  const name = ids.length === 1 ? N(ids[0]).name : "FRF";
-  modal("FRF chart for the report", b, [
+  b.addEventListener("input", build); b.addEventListener("change", build);
+  setTimeout(() => {
+    const z = g("frZoom"); if (z) z.onclick = ev => { ev.preventDefault(); g("frFa").value = UI.frfZ ? +UI.frfZ[0].toFixed(1) : ""; g("frFb").value = UI.frfZ ? +UI.frfZ[1].toFixed(1) : ""; build(); };
+    const fr = g("frFrom"); if (fr) fr.onchange = ev => { ev.stopPropagation(); const src = N(fr.value); if (!src || !src.frep) return; gone = true; const r = frepPortable(src.frep);
+      if (key && N(key)){ const own = N(key).frep || {}; N(key).frep = { ...r, ...(own.subEdited ? { sub: own.sub, subEdited: true } : {}) }; setDirty(true); persist(); } else frfReportDialog.state = r;
+      document.querySelector(".dlg .btn:not(.primary)")?.click(); setTimeout(() => frfReportDialog(ids), 50); toast(`Print settings taken from “${src.name}”`); };
+    const rr = g("frReset"); if (rr) rr.onclick = ev => { ev.preventDefault(); if (key && N(key)) delete N(key).frep; frfReportDialog.state = null; setDirty(true); persist(); document.querySelector(".dlg .btn:not(.primary)")?.click(); setTimeout(() => frfReportDialog(ids), 50); };
+  }, 0);
+  const suffix = () => isC ? "coherence" : st.form;
+  const batch = async () => {
+    toast(`Creating ${sibs.length + (one ? 0 : 1)} images…`); const files = [], used = new Set();
+    const add = async (list, nm) => { let base = safeName(nm), k = 2, x = base; while (used.has(x.toLowerCase())) x = base + "_" + k++; used.add(x.toLowerCase());
+      const c2 = frepRender(list, st, { ...(st.subEdited && list.length === ids.length ? { sub: st.sub } : {}), ...(list === ids ? { title: g("frTitle").value } : {}) });
+      const bl = await new Promise(res => c2.toBlob(res, "image/png")); files.push({ name: x + "_" + suffix() + ".png", data: new Uint8Array(await bl.arrayBuffer()) }); await new Promise(r => setTimeout(r, 0)); };
+    if (!one) await add(ids, g("frTitle").value || "overlay");
+    for (const id of sibs) await add([id], N(id).name);
+    await saveImageSet(files, safeName(N(key).name) + "_" + (isC ? "coherence" : "FRF") + "_images.zip");
+  };
+  modal(isC ? "Coherence chart for the report" : "FRF chart for the report", b, [
     { label: "Close" },
     { label: "Copy image", run: () => { try { const pr = new Promise(res => cv.toBlob(res, "image/png")); navigator.clipboard.write([new ClipboardItem({ "image/png": pr })]).then(() => toast("Image copied — paste it into Word"), () => toast("This view doesn't allow copying images. Use Save PNG.")); } catch(e){ toast("This view doesn't allow copying images. Use Save PNG."); } return false; } },
-    { label: "Save PNG", primary: true, run: () => { cv.toBlob(bl => saveWithPicker(safeName(name) + "_" + (UI.frfT || "acc") + ".png", bl, "PNG image", "image/png", ".png"), "image/png"); return false; } },
+    { label: "Save PNG", primary: true, run: () => { if (st.all && g("frAll")){ batch(); return false; } cv.toBlob(bl => saveWithPicker(safeName(g("frTitle").value || "FRF") + "_" + suffix() + ".png", bl, "PNG image", "image/png", ".png"), "image/png"); return false; } },
   ], true);
-  (document.fonts?.ready || Promise.resolve()).then(build); build();
+  (document.fonts?.ready || Promise.resolve()).then(() => build()); build();
 }
+const frepPortable = r => { if (!r) return null; const o = JSON.parse(JSON.stringify(r)); delete o.sub; delete o.subEdited; delete o.all; return o; };
+const frfImageDialog = frfReportDialog;
 
 /* ---------- toast ---------- */
 let toastT;

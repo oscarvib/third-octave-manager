@@ -49,6 +49,7 @@ La versión aparece junto al título de la aplicación (por ejemplo `v1.0`) y se
 
 | Versión | Fecha | Cambios |
 |---|---|---|
+| 2.13 | 21/11/2026 | Imágenes de informe de FRF y coherencia con las mismas opciones que los espectros (formato, cabecera, leyenda, tamaños de letra, rango de frecuencias, grosor de curva, guardado por carpeta, «Same as folder» y guardar todas las de la carpeta). Carpeta de coherencia rediseñada: mediana por tercio de octava, umbral γ², vista superpuesta o un panel por canal, calidad por canal (rango válido, media, caídas) y tabla de tercios coloreada. |
 | 2.12 | 21/11/2026 | Importación de ensayos de impacto UNV (FRF, coherencia, PSD, 1/3 octava, temporales) en subcarpetas propias; vista FRF (acelerancia, movilidad, receptancia, rigidez dinámica, masa aparente, impedancia) con fase y coherencia; líneas de masa y rigidez del driving point. |
 | 2.11 | 19/11/2026 | Fondo en gris claro (discontinuo y con área sombreada) para no confundirlo con la media negra; con «solo la media» y fondo, la media pasa a azul intenso. |
 | 2.10 | 18/11/2026 | Corregido: al guardar las imágenes de toda una carpeta no salían las curvas límite. |
